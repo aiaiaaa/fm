@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.xfm.harmony",
     "vendor": "xfm",
-    "versionCode": 1000000,
-    "versionName": "1.0.0",
+    "versionCode": 610,
+    "versionName": "6.10",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

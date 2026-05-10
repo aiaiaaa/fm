@@ -179,8 +179,10 @@ export class RadioPlayer {
     }
     try {
       this.currentUrl = url;
+      const prev = this.state;
       this.setState('loading');
-      if (this.state !== 'idle') {
+      // 如果当前不是 idle 状态，则先 reset 再重新赋 url
+      if (prev !== 'idle' && prev !== 'error') {
         await this.player.reset();
       }
       this.player.url = url;
