@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "app_name", "value": "X.FM" },
+    { "name": "EntryAbility_desc", "value": "X.FM radio" },
+    { "name": "EntryAbility_label", "value": "X.FM" }
+  ]
+}

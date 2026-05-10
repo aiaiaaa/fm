@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "X.FM HarmonyOS App",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19",
+    "@ohos/hvigor-ohos-plugin": "4.0.5",
+    "@ohos/hvigor": "4.0.5"
+  }
+}
