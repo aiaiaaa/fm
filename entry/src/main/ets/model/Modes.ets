@@ -16,7 +16,12 @@ export interface ModeConfig {
   url: string;          // 直播流 / 音频
 }
 
-export const MODES: Record<ModeId, ModeConfig> = {
+export interface ModesMap {
+  focus: ModeConfig;
+  sleep: ModeConfig;
+}
+
+export const MODES: ModesMap = {
   focus: {
     id: 'focus',
     label: '专注',

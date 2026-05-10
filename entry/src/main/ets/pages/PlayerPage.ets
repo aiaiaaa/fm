@@ -134,21 +134,47 @@ export struct PlayerPage {
     });
   }
 
+  private wavePhase: number = 0;
+
   private startRhythm(): void {
     if (this.rhythmTimer >= 0) {
       return;
     }
+    // 缩短刷新间隔，提升流畅度（150ms约等于 6~7 fps 的关键帧变换，配合 animateTo 形成丝滑过渡）
     this.rhythmTimer = setInterval(() => {
-      animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
+      // 每次刷新推进相位
+      this.wavePhase += 0.4;
+
+      animateTo({ duration: 150, curve: Curve.Linear }, () => {
         const arr: number[] = [];
-        for (let i = 0; i < 23; i++) {
-          const center = Math.abs(i - 11);
-          const base = 1.1 - center * 0.055;
-          arr.push(Math.max(0.35, base + Math.random() * 0.35 - 0.1));
+        const TOTAL_DOTS = 23;
+        const CENTER = Math.floor(TOTAL_DOTS / 2); // 11
+
+        for (let i = 0; i < TOTAL_DOTS; i++) {
+          // 1. 将索引映射到 -1.0 到 1.0 的范围
+          const x = (i - CENTER) / CENTER;
+
+          // 2. 高斯包络线 (Gaussian Envelope)：强制波形呈现中间高、两边平滑衰减的形态
+          // Math.exp(-x * x * 3) 中的 3 决定了衰减的陡峭程度
+          const envelope = Math.exp(-x * x * 3);
+
+          // 3. 复合波动生成：模拟低、中、高频的组合
+          // - 低频 (Low): 控制整体的平缓呼吸
+          const lowFreq = Math.sin(this.wavePhase * 0.8) * 0.3;
+          // - 中频 (Mid): 随索引位置变化的涟漪感
+          const midFreq = Math.sin(this.wavePhase * 1.5 + i * 0.6) * 0.4;
+          // - 高频/节奏 (High): 极小幅度的随机抖动，模拟鼓点
+          const beat = (Math.random() * 0.15 - 0.075);
+
+          // 4. 合成绝对值，并应用包络线
+          let waveHeight = Math.abs(lowFreq + midFreq + beat) * envelope;
+          // 5. 映射到视觉缩放比例 (基础高度 0.2，最大高度上限通过常数控制)
+          const scaleY = Math.max(0.2, 0.2 + waveHeight * 2.5);
+          arr.push(scaleY);
         }
         this.dotScales = arr;
       });
-    }, 260);
+    }, 150);
   }
 
   private stopRhythm(): void {
@@ -156,8 +182,9 @@ export struct PlayerPage {
       clearInterval(this.rhythmTimer);
       this.rhythmTimer = -1;
     }
-    animateTo({ duration: 400 }, () => {
-      this.dotScales = new Array(23).fill(0.4);
+    // 停止时，平滑回落到一条静止的微小直线
+    animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
+      this.dotScales = new Array(23).fill(0.15);
     });
   }
 
@@ -173,6 +200,15 @@ export struct PlayerPage {
     return MODES.sleep.url;
   }
 
+  private getCurrentModeConfig(): ModeConfig {
+    return this.mode === 'focus' ? MODES.focus : MODES.sleep;
+  }
+
+  private modeCfgOf(m: ModeId): ModeConfig {
+    if (m === 'focus') return MODES.focus;
+    return MODES.sleep;
+  }
+
   private async togglePlay(): Promise<void> {
     if (this.isLoading) {
       return;
@@ -180,7 +216,7 @@ export struct PlayerPage {
     if (this.isPlaying) {
       await this.player.pause();
     } else {
-      const cfg = MODES[this.mode];
+      const cfg = this.getCurrentModeConfig();
       this.player.setTrack({
         title: `X.FM - ${this.mode === 'focus' ? (this.lang === 'cn' ? '中文' : 'EN') : '睡眠'}`,
         artist: 'X.FM',
@@ -382,13 +418,13 @@ export struct PlayerPage {
   ModeSwitch(cfg: ModeConfig) {
     Row() {
       ForEach(['focus', 'sleep'] as ModeId[], (m: ModeId) => {
-        Text(MODES[m].label)
+        Text(m === 'focus' ? MODES.focus.label : MODES.sleep.label)
           .fontSize(13)
           .fontColor(this.mode === m ? '#0A0E27' : '#FFFFFFAA')
           .fontWeight(this.mode === m ? FontWeight.Bold : FontWeight.Regular)
           .padding({ left: 18, right: 18, top: 7, bottom: 7 })
           .borderRadius(16)
-          .backgroundColor(this.mode === m ? MODES[m].accent : '#00000000')
+          .backgroundColor(this.mode === m ? (m === 'focus' ? MODES.focus.accent : MODES.sleep.accent) : '#00000000')
           .animation({ duration: 250, curve: Curve.EaseOut })
           .onClick(() => this.switchMode(m))
       })
@@ -397,6 +433,7 @@ export struct PlayerPage {
     .borderRadius(20)
     .backgroundColor('#FFFFFF10')
     .border({ width: 1, color: '#FFFFFF18' })
+    .margin({ top: 22 })
   }
 
   // 卡片头部标签
@@ -443,47 +480,35 @@ export struct PlayerPage {
   }
 
   // 主播放卡片
+  // 主播放卡片 (增加毛玻璃质感)
   @Builder
-  PlayerCard() {
-    const cfg = MODES[this.mode];
+  PlayerCard(cfg: ModeConfig) {
     Stack() {
-      // 背景渐变
+      // 1. 移除纯实色或生硬的渐变，改用较低透明度的背景 + 背景模糊 (毛玻璃)
       Column()
         .width('100%').height('100%')
         .borderRadius(28)
-        .linearGradient({
-          angle: 160,
-          colors: [[cfg.bgFrom, 0], [cfg.bgTo, 1]]
-        })
-        .border({ width: 1, color: '#FFFFFF0F' })
+        .backgroundColor('#1AFFFFFF') // 极低的白色透明度
+        .backdropBlur(20) // 【新增】鸿蒙原生毛玻璃效果，质感提升关键
+        .border({ width: 1, color: '#33FFFFFF' }) // 增强边缘高光边缘
 
-      // 星空
+      // 星空与流星（保持在底层）
       this.StarField()
-      // 流星（关键效果）
       this.MeteorField(cfg)
 
       Column() {
         this.CardHeader(cfg)
 
         Column() {
-          // 模式切换
           this.ModeSwitch(cfg)
-            .margin({ top: 22 })
 
-          // 大标题
-          Row() {
-            Text('X.FM - ')
-              .fontSize(34)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-            Text(this.mode === 'focus'
-              ? (this.lang === 'cn' ? '中文' : 'EN')
-              : '睡眠')
-              .fontSize(34)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-          }
-          .margin({ top: 18 })
+          // 【优化】合并文本，避免中英文分离导致的对齐问题
+          Text(`X.FM - ${this.mode === 'focus' ? (this.lang === 'cn' ? '中文' : 'EN') : '睡眠'}`)
+            .fontSize(34)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+            .margin({ top: 18 })
+            .letterSpacing(2) // 增加字间距提升高级感
 
           Text(cfg.subtitle)
             .fontSize(14)
@@ -498,13 +523,13 @@ export struct PlayerPage {
 
           this.DotVisualizer(cfg)
 
-          // 控制栏：箭头 + 播放按钮
+          // 【优化】重构控制栏：移除产生歧义的语言切换箭头
           Row() {
-            this.ArrowButton('left')
-            Blank().width(12)
+            // 如果只有单向播放，可以考虑放入其他功能键，例如：收藏、定时
+            // 此处用透明占位符保持播放按钮居中，或者直接去掉两边
+            Blank().width(44)
             this.PlayButton(cfg)
-            Blank().width(12)
-            this.ArrowButton('right')
+            Blank().width(44)
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -521,72 +546,84 @@ export struct PlayerPage {
     .aspectRatio(0.78)
     .borderRadius(28)
     .clip(true)
-    .shadow({ radius: 40, color: '#00000088', offsetX: 0, offsetY: 12 })
+    .shadow({ radius: 30, color: '#00000088', offsetX: 0, offsetY: 20 }) // 阴影下移，增强悬浮感
   }
 
-  // 底部 CHANNELS 胶囊
+  // 底部胶囊 (结合逻辑优化)
   @Builder
-  ChannelsCapsule() {
-    const cfg = MODES[this.mode];
+  BottomControls(cfg: ModeConfig) {
     Column() {
-      Text('CHANNELS')
-        .fontSize(11)
-        .fontColor('#FFFFFF55')
-        .letterSpacing(4)
-        .margin({ bottom: 14 })
+      // 【优化】条件渲染：只有 focus 模式才显示 Channel，sleep 模式可以显示定时器或留白
+      if (this.mode === 'focus') {
+        Text('CHANNELS')
+          .fontSize(11)
+          .fontColor('#FFFFFF55')
+          .letterSpacing(4)
+          .margin({ bottom: 14 })
 
-      Row() {
-        ForEach(['cn', 'en'] as Array<'cn' | 'en'>, (l: 'cn' | 'en') => {
-          Text(l === 'cn' ? '中文' : 'EN')
-            .fontSize(14)
-            .fontColor(this.lang === l ? cfg.accent : '#FFFFFFAA')
-            .fontWeight(this.lang === l ? FontWeight.Bold : FontWeight.Regular)
-            .padding({ left: 30, right: 30, top: 10, bottom: 10 })
-            .borderRadius(22)
-            .border(
-              this.lang === l
-                ? { width: 1, color: cfg.accent }
-                : { width: 1, color: Color.Transparent }
-            )
-            .animation({ duration: 250, curve: Curve.EaseOut })
-            .onClick(() => this.switchLang(l))
-        })
+        Row() {
+          ForEach(['cn', 'en'] as Array<'cn' | 'en'>, (l: 'cn' | 'en') => {
+            Text(l === 'cn' ? '中文' : 'EN')
+              .fontSize(14)
+              .fontColor(this.lang === l ? cfg.accent : '#FFFFFFAA')
+              .fontWeight(this.lang === l ? FontWeight.Bold : FontWeight.Regular)
+              .padding({ left: 30, right: 30, top: 10, bottom: 10 })
+              .borderRadius(22)
+              .backgroundColor(this.lang === l ? '#11FFFFFF' : 'transparent') // 增加选中状态底色
+              .border(
+                this.lang === l
+                  ? { width: 1, color: cfg.accent }
+                  : { width: 1, color: 'transparent' }
+              )
+              .animation({ duration: 250, curve: Curve.EaseOut })
+              .onClick(() => this.switchLang(l))
+          })
+        }
+        .padding(3)
+        .borderRadius(26)
+        .backgroundColor('#FFFFFF10')
+        .backdropBlur(15) // 【新增】同样使用毛玻璃
+        .border({ width: 1, color: '#FFFFFF15' })
+      } else {
+        // Sleep 模式下的占位或定时器 UI
+        Text('SLEEP TIMER')
+          .fontSize(11)
+          .fontColor('#FFFFFF55')
+          .letterSpacing(4)
+          .margin({ bottom: 14 })
       }
-      .padding(3)
-      .borderRadius(26)
-      .backgroundColor('#FFFFFF0D')
-      .border({ width: 1, color: '#FFFFFF15' })
     }
     .width('100%')
+    .height(100) // 给予固定高度，防止切换模式时页面跳动
     .alignItems(HorizontalAlign.Center)
+    .margin({ bottom: 24 })
   }
 
   build() {
     Stack() {
-      // 全屏深色背景
+      // 保持深色背景，但渐变更加平滑
       Column()
         .width('100%').height('100%')
         .linearGradient({
           angle: 180,
           colors: [
-            ['#0A0E27', 0],
+            ['#070B1D', 0],   // 稍微加深顶部
             ['#111636', 0.5],
-            ['#0A0E27', 1]
+            ['#050814', 1]    // 底部更暗，凸显光效
           ]
         })
 
       Column() {
-        this.TopNav(MODES[this.mode])
+        this.TopNav(this.getCurrentModeConfig())
 
         Column() {
-          this.PlayerCard()
+          this.PlayerCard(this.getCurrentModeConfig())
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
-        .padding({ left: 20, right: 20 })
+        .padding({ left: 24, right: 24 }) // 规范化边距
 
-        this.ChannelsCapsule()
-          .margin({ bottom: 24 })
+        this.BottomControls(this.getCurrentModeConfig()) // 调用优化后的底部控件
       }
       .width('100%').height('100%')
     }
