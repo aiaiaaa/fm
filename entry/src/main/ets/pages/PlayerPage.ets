@@ -1,6 +1,6 @@
-import window from '@ohos.window';
-import promptAction from '@ohos.promptAction';
-import common from '@ohos.app.ability.common';
+import { window } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { RadioPlayer, PlayerState } from '../services/RadioPlayer';
 import { BackgroundTask } from '../services/BackgroundTask';
 import { MODES, ModeId, ModeConfig } from '../model/Modes';

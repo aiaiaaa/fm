@@ -1,8 +1,8 @@
-import media from '@ohos.multimedia.media';
-import audio from '@ohos.multimedia.audio';
-import avSession from '@ohos.multimedia.avsession';
-import hilog from '@ohos.hilog';
-import common from '@ohos.app.ability.common';
+import { media } from '@kit.MediaKit';
+import { audio } from '@kit.AudioKit';
+import { avSession } from '@kit.AVSessionKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
 
 const TAG = 'RadioPlayer';
 

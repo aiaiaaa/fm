@@ -1,7 +1,7 @@
-import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
-import wantAgent from '@ohos.app.ability.wantAgent';
-import common from '@ohos.app.ability.common';
-import hilog from '@ohos.hilog';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
+import { wantAgent } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'BackgroundTask';
 

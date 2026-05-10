@@ -1,5 +1,5 @@
-import audio from '@ohos.multimedia.audio';
-import hilog from '@ohos.hilog';
+import { audio } from '@kit.AudioKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'AudioVisualizer';
 
@@ -7,9 +7,12 @@ const TAG = 'AudioVisualizer';
  * 音波可视化服务：调用鸿蒙底层音频 API 感知系统输出状态，
  * 并据此生成更贴近真实播放的音波数据。
  *
- * 核心依赖：
- *   - @ohos.multimedia.audio 的 AudioStreamManager：订阅 RENDERER 变化
- *   - AudioVolumeGroupManager：读取当前媒体音量
+ * 核心依赖（HarmonyOS NEXT API 12+）：
+ *   - @kit.AudioKit → audio.AudioStreamManager：订阅 RENDERER 变化
+ *   - AudioVolumeGroupManager（通过 getVolumeGroupManagerSync 同步获取）：读取当前媒体音量
+ *
+ * 参考文档：
+ *   https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-audio
  *
  * 调用方（UI）只需要：
  *   1) start(cb)                 —— 启动取样回路，cb 中拿 levels[]
@@ -44,7 +47,7 @@ export class AudioVisualizer {
       const mgr = audio.getAudioManager();
       this.streamMgr = mgr.getStreamManager();
 
-      // 订阅 renderer 状态变化：音频是否真的在输出
+      // 订阅 renderer 状态变化：音频是否真的在输出（API 12+）
       this.streamMgr.on('audioRendererChange', (infoArray: audio.AudioRendererChangeInfo[]) => {
         let anyRunning = false;
         for (const info of infoArray) {
@@ -56,10 +59,11 @@ export class AudioVisualizer {
         this.systemRunning = anyRunning;
       });
 
-      // 音量管理：读取当前媒体音量作为波形基准振幅
-      const vgm = await mgr.getVolumeManager().getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
+      // 音量管理：使用 API 12+ 推荐的同步方法 getVolumeGroupManagerSync
+      // 替代已废弃的 getVolumeGroupManager 异步版本
+      const vgm = mgr.getVolumeManager().getVolumeGroupManagerSync(audio.DEFAULT_VOLUME_GROUP_ID);
       this.volumeMgr = vgm;
-      await this.refreshVolume();
+      this.refreshVolume();
       vgm.on('volumeChange', () => {
         this.refreshVolume();
       });
@@ -96,11 +100,12 @@ export class AudioVisualizer {
     this.cb = null;
   }
 
-  private async refreshVolume(): Promise<void> {
+  private refreshVolume(): void {
     if (!this.volumeMgr) return;
     try {
-      const v = await this.volumeMgr.getVolume(audio.AudioVolumeType.MEDIA);
-      const max = await this.volumeMgr.getMaxVolume(audio.AudioVolumeType.MEDIA);
+      // API 12+ 同步获取音量（getVolumeSync / getMaxVolumeSync）
+      const v = this.volumeMgr.getVolumeSync(audio.AudioVolumeType.MEDIA);
+      const max = this.volumeMgr.getMaxVolumeSync(audio.AudioVolumeType.MEDIA);
       if (max > 0) {
         this.systemVolume = Math.min(1, Math.max(0.15, v / max));
       }

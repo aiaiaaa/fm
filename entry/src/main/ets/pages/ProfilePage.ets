@@ -1,4 +1,4 @@
-import window from '@ohos.window';
+import { window } from '@kit.ArkUI';
 
 /**
  * "个人" Tab 页 —— 与 PlayerPage 统一深空暗黑风格
