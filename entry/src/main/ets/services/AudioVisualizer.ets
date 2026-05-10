@@ -7,12 +7,14 @@ const TAG = 'AudioVisualizer';
  * 音波可视化服务：调用鸿蒙底层音频 API 感知系统输出状态，
  * 并据此生成更贴近真实播放的音波数据。
  *
- * 核心依赖（HarmonyOS NEXT API 12+）：
- *   - @kit.AudioKit → audio.AudioStreamManager：订阅 RENDERER 变化
- *   - AudioVolumeGroupManager（通过 getVolumeGroupManagerSync 同步获取）：读取当前媒体音量
+ * 核心依赖（HarmonyOS NEXT API 12+ / HarmonyOS 6.10）：
+ *   - @kit.AudioKit → audio.AudioStreamManager：
+ *     通过 getCurrentAudioRendererInfoArray 轮询当前 renderer 状态
+ *   - AudioVolumeManager：通过 getVolumeSync 读取媒体音量
  *
- * 参考文档：
- *   https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-audio
+ * 注意：API 12+ 中 AudioRendererChangeInfo 已移除 rendererState 字段，
+ * AudioVolumeGroupManager 也不再支持 on('volumeChange')。
+ * 因此本实现采用轮询方式获取音频状态。
  *
  * 调用方（UI）只需要：
  *   1) start(cb)                 —— 启动取样回路，cb 中拿 levels[]
@@ -28,7 +30,6 @@ export type VisualizerCallback = (levels: number[], active: boolean) => void;
 
 export class AudioVisualizer {
   private streamMgr: audio.AudioStreamManager | null = null;
-  private volumeMgr: audio.AudioVolumeGroupManager | null = null;
   private timer: number = -1;
   private phase: number = 0;
   private active: boolean = false;
@@ -47,28 +48,14 @@ export class AudioVisualizer {
       const mgr = audio.getAudioManager();
       this.streamMgr = mgr.getStreamManager();
 
-      // 订阅 renderer 状态变化：音频是否真的在输出（API 12+）
-      this.streamMgr.on('audioRendererChange', (infoArray: audio.AudioRendererChangeInfo[]) => {
-        let anyRunning = false;
-        for (const info of infoArray) {
-          if (info.rendererState === audio.AudioState.STATE_RUNNING) {
-            anyRunning = true;
-            break;
-          }
-        }
-        this.systemRunning = anyRunning;
-      });
+      // 通过轮询 getCurrentAudioRendererInfoArray 感知音频输出状态
+      // 这是 API 12+ 推荐的方式，替代 on('audioRendererChange') 中已移除的 rendererState
+      this.pollRendererState();
 
-      // 音量管理：使用 API 12+ 推荐的同步方法 getVolumeGroupManagerSync
-      // 替代已废弃的 getVolumeGroupManager 异步版本
-      const vgm = mgr.getVolumeManager().getVolumeGroupManagerSync(audio.DEFAULT_VOLUME_GROUP_ID);
-      this.volumeMgr = vgm;
-      this.refreshVolume();
-      vgm.on('volumeChange', () => {
-        this.refreshVolume();
-      });
+      // 获取音量：使用 AudioVolumeManager 的 getVolumeSync（API 12+）
+      this.refreshVolume(mgr);
     } catch (e) {
-      hilog.warn(0x0000, TAG, `native audio api unavailable, fallback to synthetic: ${JSON.stringify(e)}`);
+      hilog.warn(0x0000, TAG, `native audio api init: ${JSON.stringify(e)}`);
       // 即便鸿蒙原生 API 不可用，也要继续用合成波形，保证 UI 有反馈
     }
 
@@ -85,32 +72,42 @@ export class AudioVisualizer {
       clearInterval(this.timer);
       this.timer = -1;
     }
-    try {
-      this.streamMgr?.off('audioRendererChange');
-    } catch (_e) {
-      // ignore
-    }
-    try {
-      this.volumeMgr?.off('volumeChange');
-    } catch (_e) {
-      // ignore
-    }
     this.streamMgr = null;
-    this.volumeMgr = null;
     this.cb = null;
   }
 
-  private refreshVolume(): void {
-    if (!this.volumeMgr) return;
+  /**
+   * 轮询当前活跃的 AudioRenderer 列表来判断是否有音频正在输出。
+   * getCurrentAudioRendererInfoArray 返回当前所有活跃的 renderer 信息。
+   */
+  private pollRendererState(): void {
+    if (!this.streamMgr) return;
     try {
-      // API 12+ 同步获取音量（getVolumeSync / getMaxVolumeSync）
-      const v = this.volumeMgr.getVolumeSync(audio.AudioVolumeType.MEDIA);
-      const max = this.volumeMgr.getMaxVolumeSync(audio.AudioVolumeType.MEDIA);
+      // getCurrentAudioRendererInfoArray 是同步 API（API 12+）
+      const infoArray = this.streamMgr.getCurrentAudioRendererInfoArray();
+      // 如果有任何活跃 renderer，认为系统正在播放音频
+      this.systemRunning = infoArray.length > 0;
+    } catch (e) {
+      // 轮询失败不影响 UI
+      hilog.debug(0x0000, TAG, `pollRendererState: ${JSON.stringify(e)}`);
+    }
+  }
+
+  /**
+   * 获取系统媒体音量（API 12+ 使用 getVolumeSync）
+   */
+  private refreshVolume(mgr: audio.AudioManager): void {
+    try {
+      const volMgr = mgr.getVolumeManager();
+      const groupMgr = volMgr.getVolumeGroupManagerSync(audio.DEFAULT_VOLUME_GROUP_ID);
+      const v = groupMgr.getVolumeSync(audio.AudioVolumeType.MEDIA);
+      const max = groupMgr.getMaxVolumeSync(audio.AudioVolumeType.MEDIA);
       if (max > 0) {
         this.systemVolume = Math.min(1, Math.max(0.15, v / max));
       }
     } catch (e) {
-      hilog.warn(0x0000, TAG, `getVolume failed: ${JSON.stringify(e)}`);
+      hilog.warn(0x0000, TAG, `refreshVolume failed: ${JSON.stringify(e)}`);
+      // 使用默认值 0.6
     }
   }
 
@@ -123,6 +120,11 @@ export class AudioVisualizer {
   private tick(): void {
     if (!this.cb) return;
     this.phase += 0.45;
+
+    // 每 3 次 tick（约 270ms）轮询一次 renderer 状态，减少性能开销
+    if (Math.floor(this.phase * 10) % 3 === 0) {
+      this.pollRendererState();
+    }
 
     const N = this.opts.bars;
     const center = (N - 1) / 2;
