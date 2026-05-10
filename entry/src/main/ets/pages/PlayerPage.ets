@@ -4,7 +4,8 @@ import common from '@ohos.app.ability.common';
 import { RadioPlayer, PlayerState } from '../services/RadioPlayer';
 import { BackgroundTask } from '../services/BackgroundTask';
 import { MODES, ModeId, ModeConfig } from '../model/Modes';
-import { Meteor } from '../components/Meteor';
+import { MeteorField } from '../components/MeteorField';
+import { WaveVisualizer } from '../components/WaveVisualizer';
 
 interface StarDot {
   x: number;
@@ -13,6 +14,16 @@ interface StarDot {
   opacity: number;
 }
 
+/**
+ * 电台首页 —— 严格对标设计稿：
+ *   顶部 X.FM LOGO
+ *   ├─ "正在直播" 标题行  + LIVE 徽标 + 小波形图标
+ *   ├─ 大卡片（主播放区）
+ *   │    流星 + 星空 + "X.FM - 中文" + 描述 + 音波 + 上/播放/下按钮
+ *   └─ "电台模式" 标题
+ *        ├─ 专注电台 卡片
+ *        └─ 睡眠电台 卡片
+ */
 @Component
 export struct PlayerPage {
   @State isPlaying: boolean = false;
@@ -21,15 +32,15 @@ export struct PlayerPage {
   @State lang: 'cn' | 'en' = 'cn';
   @State statusBarHeight: number = 40;
 
-  // 点阵音波 —— 按截图：一排 23 颗圆点，中间高两头低
-  @State dotScales: number[] = new Array(23).fill(0.4);
-  private rhythmTimer: number = -1;
-
   // logo 4 根柱子
   @State logoBars: number[] = [10, 16, 8, 13];
   private logoTimer: number = -1;
 
-  // 播放按钮外圈光晕呼吸
+  // LIVE 右侧的小波形（图片右上角）
+  @State miniBars: number[] = [0.4, 0.7, 0.5, 0.9, 0.6];
+  private miniTimer: number = -1;
+
+  // 播放按钮外圈光晕
   @State glowScale: number = 1.0;
   @State glowOpacity: number = 0.35;
 
@@ -49,12 +60,12 @@ export struct PlayerPage {
 
     // 生成星空
     const list: StarDot[] = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 55; i++) {
       list.push({
         x: Math.random() * 100,
         y: Math.random() * 100,
-        size: Math.random() < 0.15 ? 2.5 : 1.5,
-        opacity: 0.25 + Math.random() * 0.55
+        size: Math.random() < 0.15 ? 2.2 : 1.2,
+        opacity: 0.2 + Math.random() * 0.55
       });
     }
     this.stars = list;
@@ -70,19 +81,16 @@ export struct PlayerPage {
           case 'playing':
             this.isLoading = false;
             this.isPlaying = true;
-            this.startRhythm();
             BackgroundTask.start(context);
             break;
           case 'paused':
           case 'idle':
             this.isPlaying = false;
             this.isLoading = false;
-            this.stopRhythm();
             break;
           case 'error':
             this.isPlaying = false;
             this.isLoading = false;
-            this.stopRhythm();
             break;
           default:
             break;
@@ -94,14 +102,13 @@ export struct PlayerPage {
     });
 
     this.startLogoAnim();
+    this.startMiniAnim();
     this.startGlowAnim();
   }
 
   aboutToDisappear(): void {
-    this.stopRhythm();
-    if (this.logoTimer >= 0) {
-      clearInterval(this.logoTimer);
-    }
+    if (this.logoTimer >= 0) clearInterval(this.logoTimer);
+    if (this.miniTimer >= 0) clearInterval(this.miniTimer);
     const context = getContext(this) as common.UIAbilityContext;
     BackgroundTask.stop(context);
     this.player.release();
@@ -122,6 +129,14 @@ export struct PlayerPage {
     }, 450);
   }
 
+  private startMiniAnim(): void {
+    this.miniTimer = setInterval(() => {
+      animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
+        this.miniBars = this.miniBars.map(() => 0.3 + Math.random() * 0.7);
+      });
+    }, 300);
+  }
+
   private startGlowAnim(): void {
     animateTo({
       duration: 1800,
@@ -134,37 +149,9 @@ export struct PlayerPage {
     });
   }
 
-  private startRhythm(): void {
-    if (this.rhythmTimer >= 0) {
-      return;
-    }
-    this.rhythmTimer = setInterval(() => {
-      animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
-        const arr: number[] = [];
-        for (let i = 0; i < 23; i++) {
-          const center = Math.abs(i - 11);
-          const base = 1.1 - center * 0.055;
-          arr.push(Math.max(0.35, base + Math.random() * 0.35 - 0.1));
-        }
-        this.dotScales = arr;
-      });
-    }, 260);
-  }
-
-  private stopRhythm(): void {
-    if (this.rhythmTimer >= 0) {
-      clearInterval(this.rhythmTimer);
-      this.rhythmTimer = -1;
-    }
-    animateTo({ duration: 400 }, () => {
-      this.dotScales = new Array(23).fill(0.4);
-    });
-  }
-
-  /* ============ 交互 ============ */
+  /* ============ 播放控制 ============ */
 
   private currentUrl(): string {
-    // 专注模式区分中英文，睡眠模式固定
     if (this.mode === 'focus') {
       return this.lang === 'cn'
         ? 'https://ngcdn001.cnr.cn/live/zgzs/index.m3u8'
@@ -173,27 +160,39 @@ export struct PlayerPage {
     return MODES.sleep.url;
   }
 
-  private async togglePlay(): Promise<void> {
-    if (this.isLoading) {
-      return;
+  private currentCfg(): ModeConfig {
+    return this.mode === 'focus' ? MODES.focus : MODES.sleep;
+  }
+
+  private currentTitle(): string {
+    if (this.mode === 'focus') {
+      return this.lang === 'cn' ? 'X.FM - 中文' : 'X.FM - EN';
     }
+    return 'X.FM - 睡眠';
+  }
+
+  private async togglePlay(): Promise<void> {
+    if (this.isLoading) return;
     if (this.isPlaying) {
       await this.player.pause();
+      return;
+    }
+    const cfg = this.currentCfg();
+    this.player.setTrack({
+      title: this.currentTitle(),
+      artist: 'X.FM',
+      album: cfg.subtitle
+    });
+    // 若已加载同一路但为暂停 → 直接 play；否则 load 新流
+    if (this.player.getState() === 'paused') {
+      await this.player.play();
     } else {
-      const cfg = MODES[this.mode];
-      this.player.setTrack({
-        title: `X.FM - ${this.mode === 'focus' ? (this.lang === 'cn' ? '中文' : 'EN') : '睡眠'}`,
-        artist: 'X.FM',
-        album: cfg.subtitle
-      });
       await this.player.load(this.currentUrl());
     }
   }
 
   private async switchMode(m: ModeId): Promise<void> {
-    if (this.mode === m) {
-      return;
-    }
+    if (this.mode === m) return;
     this.mode = m;
     if (this.isPlaying || this.isLoading) {
       await this.player.stop();
@@ -202,9 +201,7 @@ export struct PlayerPage {
   }
 
   private async switchLang(l: 'cn' | 'en'): Promise<void> {
-    if (this.lang === l) {
-      return;
-    }
+    if (this.lang === l) return;
     this.lang = l;
     if (this.isPlaying || this.isLoading) {
       await this.player.stop();
@@ -212,44 +209,86 @@ export struct PlayerPage {
     }
   }
 
-  /* ============ UI ============ */
+  /* ============ UI Builders ============ */
 
-  // 顶部导航
   @Builder
-  TopNav(cfg: ModeConfig) {
-    Row() {
-      Row({ space: 8 }) {
-        Row({ space: 3 }) {
-          ForEach([0, 1, 2, 3], (i: number) => {
-            Column()
-              .width(3)
-              .height(this.logoBars[i])
-              .borderRadius(2)
-              .linearGradient({
-                angle: 180,
-                colors: [[cfg.accent, 0], [cfg.accentSecond, 1]]
-              })
-          })
-        }
-        .alignItems(VerticalAlign.Center)
-        .height(22)
-
-        Text('X.FM')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
-          .letterSpacing(1.5)
+  LogoHeader() {
+    Row({ space: 10 }) {
+      Row({ space: 3 }) {
+        ForEach([0, 1, 2, 3], (i: number) => {
+          Column()
+            .width(4)
+            .height(this.logoBars[i])
+            .borderRadius(2)
+            .linearGradient({
+              angle: 180,
+              colors: [['#2EE89D', 0], ['#00F2FE', 1]]
+            })
+        }, (i: number) => `lb-${i}`)
       }
       .alignItems(VerticalAlign.Center)
+      .height(22)
+
+      Text('X.FM')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .letterSpacing(2)
     }
     .width('100%')
-    .height(48)
     .padding({ left: 24, right: 24 })
-    .justifyContent(FlexAlign.Start)
-    .margin({ top: this.statusBarHeight })
+    .margin({ top: this.statusBarHeight + 12, bottom: 24 })
+    .alignItems(VerticalAlign.Center)
   }
 
-  // 星空层
+  @Builder
+  SectionTitle(title: string) {
+    Row() {
+      Text(title)
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .layoutWeight(1)
+
+      // 仅 "正在直播" 显示 LIVE + mini wave
+      if (title === '正在直播') {
+        Row({ space: 10 }) {
+          Row({ space: 6 }) {
+            Column().width(7).height(7).borderRadius(4).backgroundColor('#2EE89D')
+              .shadow({ radius: 6, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+            Text('LIVE')
+              .fontSize(12)
+              .fontColor('#FFFFFFCC')
+              .letterSpacing(1)
+          }
+          .alignItems(VerticalAlign.Center)
+          .padding({ left: 10, right: 12, top: 4, bottom: 4 })
+          .borderRadius(14)
+          .border({ width: 1, color: '#FFFFFF22' })
+          .backgroundColor('#FFFFFF08')
+
+          Row({ space: 2 }) {
+            ForEach(this.miniBars, (lv: number, idx: number) => {
+              Column()
+                .width(2)
+                .height(4 + lv * 14)
+                .borderRadius(1)
+                .backgroundColor('#2EE89D')
+                .opacity(0.65 + lv * 0.35)
+            }, (_: number, idx: number) => `mini-${idx}`)
+          }
+          .alignItems(VerticalAlign.Center)
+          .height(20)
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+    }
+    .width('100%')
+    .padding({ left: 24, right: 24 })
+    .margin({ bottom: 14 })
+  }
+
+  // 星空
   @Builder
   StarField() {
     Stack() {
@@ -267,329 +306,300 @@ export struct PlayerPage {
     .height('100%')
   }
 
-  // 流星层 —— 6 条斜向划过
+  // 播放按钮
   @Builder
-  MeteorField(cfg: ModeConfig) {
+  PlayButton() {
     Stack() {
-      Meteor({ startLeft: 75, delay: 0,    duration: 2200, cycle: 7000, color: cfg.accent })
-      Meteor({ startLeft: 60, delay: 1400, duration: 2000, cycle: 6500, color: cfg.accent })
-      Meteor({ startLeft: 85, delay: 2800, duration: 2400, cycle: 7500, color: cfg.accentSecond })
-      Meteor({ startLeft: 45, delay: 4000, duration: 1800, cycle: 6800, color: cfg.accent })
-      Meteor({ startLeft: 70, delay: 5200, duration: 2100, cycle: 7200, color: cfg.accentSecond })
-      Meteor({ startLeft: 55, delay: 6400, duration: 1900, cycle: 6600, color: cfg.accent })
-    }
-    .width('100%')
-    .height('100%')
-    .clip(true)
-  }
-
-  // 点阵音波 —— 一排 23 颗圆点
-  @Builder
-  DotVisualizer(cfg: ModeConfig) {
-    Row({ space: 6 }) {
-      ForEach(this.dotScales, (scale: number, idx: number) => {
-        Column()
-          .width(6)
-          .height(6)
-          .borderRadius(3)
-          .backgroundColor(cfg.accent)
-          .scale({ x: 1, y: scale })
-          .opacity(0.6 + scale * 0.4)
-          .shadow({
-            radius: this.isPlaying ? 4 : 0,
-            color: cfg.accent,
-            offsetX: 0,
-            offsetY: 0
-          })
-      }, (_: number, idx: number) => `dot-${idx}`)
-    }
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .height(40)
-    .width('100%')
-    .margin({ top: 30, bottom: 30 })
-  }
-
-  // 中心圆形播放按钮（截图样式：大圆绿色光晕）
-  @Builder
-  PlayButton(cfg: ModeConfig) {
-    Stack() {
-      // 外光晕（呼吸）
+      // 外光晕
       Column()
-        .width(110)
-        .height(110)
-        .borderRadius(55)
-        .backgroundColor(cfg.accent)
-        .opacity(this.isPlaying ? this.glowOpacity * 0.6 : 0.25)
+        .width(84)
+        .height(84)
+        .borderRadius(42)
+        .backgroundColor('#2EE89D')
+        .opacity(this.isPlaying ? this.glowOpacity * 0.6 : 0.22)
         .scale({ x: this.glowScale, y: this.glowScale })
 
       // 主按钮
       Stack() {
         if (this.isLoading) {
-          LoadingProgress()
-            .width(34)
-            .height(34)
-            .color('#0A0E27')
+          LoadingProgress().width(30).height(30).color('#0A0E27')
         } else if (this.isPlaying) {
-          Row({ space: 8 }) {
-            Column().width(6).height(26).backgroundColor('#0A0E27').borderRadius(2)
-            Column().width(6).height(26).backgroundColor('#0A0E27').borderRadius(2)
+          Row({ space: 7 }) {
+            Column().width(5).height(22).backgroundColor('#0A0E27').borderRadius(2)
+            Column().width(5).height(22).backgroundColor('#0A0E27').borderRadius(2)
           }
         } else {
-          // 播放三角 ▶
-          Polygon({ width: 22, height: 24 })
-            .points([[0, 0], [22, 12], [0, 24]])
+          Polygon({ width: 20, height: 22 })
+            .points([[0, 0], [20, 11], [0, 22]])
             .fill('#0A0E27')
             .stroke(Color.Transparent)
             .margin({ left: 4 })
         }
       }
-      .width(84)
-      .height(84)
-      .borderRadius(42)
-      .backgroundColor(cfg.accent)
+      .width(68)
+      .height(68)
+      .borderRadius(34)
+      .backgroundColor('#2EE89D')
       .alignContent(Alignment.Center)
-      .shadow({ radius: 24, color: cfg.accent, offsetX: 0, offsetY: 0 })
+      .shadow({ radius: 22, color: '#2EE89D', offsetX: 0, offsetY: 0 })
     }
-    .width(110)
-    .height(110)
+    .width(84)
+    .height(84)
     .alignContent(Alignment.Center)
     .onClick(() => this.togglePlay())
   }
 
-  // 左右切台箭头
+  // 中间大卡片（正在直播）
   @Builder
-  ArrowButton(direction: 'left' | 'right') {
+  LiveCard(cfg: ModeConfig) {
     Stack() {
-      Text(direction === 'left' ? '\u2039' : '\u203A')
-        .fontSize(30)
-        .fontColor('#FFFFFF55')
-        .fontWeight(FontWeight.Lighter)
-    }
-    .width(44)
-    .height(44)
-    .alignContent(Alignment.Center)
-    .onClick(() => {
-      // 快速切换中英文（仅 focus 模式有效果）
-      if (this.mode === 'focus') {
-        this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
-      }
-    })
-  }
+      // 背景
+      Column()
+        .width('100%').height('100%')
+        .borderRadius(24)
+        .linearGradient({
+          angle: 160,
+          colors: [['#12183A', 0], ['#0B0F2A', 0.6], ['#080B22', 1]]
+        })
+        .border({ width: 1, color: '#FFFFFF10' })
 
-  // 模式切换（专注 / 睡眠）
-  @Builder
-  ModeSwitch(cfg: ModeConfig) {
-    Row() {
-      ForEach(['focus', 'sleep'] as ModeId[], (m: ModeId) => {
-        Text(MODES[m].label)
-          .fontSize(13)
-          .fontColor(this.mode === m ? '#0A0E27' : '#FFFFFFAA')
-          .fontWeight(this.mode === m ? FontWeight.Bold : FontWeight.Regular)
-          .padding({ left: 18, right: 18, top: 7, bottom: 7 })
-          .borderRadius(16)
-          .backgroundColor(this.mode === m ? MODES[m].accent : '#00000000')
-          .animation({ duration: 250, curve: Curve.EaseOut })
-          .onClick(() => this.switchMode(m))
-      })
-    }
-    .padding(3)
-    .borderRadius(20)
-    .backgroundColor('#FFFFFF10')
-    .border({ width: 1, color: '#FFFFFF18' })
-  }
+      // 星空
+      this.StarField()
+      // 流星层
+      MeteorField({ accent: cfg.accent, accentSecond: cfg.accentSecond, density: 5 })
 
-  // 卡片头部标签
-  @Builder
-  CardHeader(cfg: ModeConfig) {
-    Row() {
-      Row({ space: 8 }) {
-        // 绿色呼吸点
-        Stack() {
+      Column() {
+        // 顶部标签 "AGENT · 实时播报"
+        Row({ space: 8 }) {
           Column()
             .width(8).height(8)
             .borderRadius(4)
             .backgroundColor(cfg.accent)
-            .shadow({ radius: 8, color: cfg.accent, offsetX: 0, offsetY: 0 })
+            .shadow({ radius: 6, color: cfg.accent, offsetX: 0, offsetY: 0 })
+          Text('AGENT')
+            .fontSize(12).fontColor(cfg.accent).fontWeight(FontWeight.Medium)
+          Text('·')
+            .fontSize(12).fontColor('#FFFFFF88')
+          Text(this.mode === 'focus' ? '实时播报' : '助眠播放')
+            .fontSize(12).fontColor('#FFFFFFCC')
         }
-        Text(cfg.tag)
-          .fontSize(12)
-          .fontColor(cfg.accent)
-          .fontWeight(FontWeight.Medium)
-      }
-      .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .padding({ left: 22, top: 20 })
+        .alignItems(VerticalAlign.Center)
 
-      Blank()
+        Blank()
 
-      // 右侧 LIVE 胶囊
-      Row({ space: 6 }) {
-        Column()
-          .width(6).height(6)
-          .borderRadius(3)
-          .backgroundColor(this.isPlaying ? '#FF5353' : '#888888')
-        Text('LIVE')
-          .fontSize(11)
-          .fontColor('#FFFFFFAA')
-          .letterSpacing(1)
-      }
-      .alignItems(VerticalAlign.Center)
-      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-      .borderRadius(12)
-      .backgroundColor('#FFFFFF10')
-      .border({ width: 1, color: '#FFFFFF18' })
-    }
-    .width('100%')
-    .padding({ left: 22, right: 18, top: 22 })
-  }
-
-  // 主播放卡片
-  @Builder
-  PlayerCard() {
-    const cfg = MODES[this.mode];
-    Stack() {
-      // 背景渐变
-      Column()
-        .width('100%').height('100%')
-        .borderRadius(28)
-        .linearGradient({
-          angle: 160,
-          colors: [[cfg.bgFrom, 0], [cfg.bgTo, 1]]
-        })
-        .border({ width: 1, color: '#FFFFFF0F' })
-
-      // 星空
-      this.StarField()
-      // 流星（关键效果）
-      this.MeteorField(cfg)
-
-      Column() {
-        this.CardHeader(cfg)
-
+        // 中部文字
         Column() {
-          // 模式切换
-          this.ModeSwitch(cfg)
-            .margin({ top: 22 })
+          Text(this.currentTitle())
+            .fontSize(30)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+            .letterSpacing(1.5)
 
-          // 大标题
-          Row() {
-            Text('X.FM - ')
-              .fontSize(34)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-            Text(this.mode === 'focus'
-              ? (this.lang === 'cn' ? '中文' : 'EN')
-              : '睡眠')
-              .fontSize(34)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-          }
-          .margin({ top: 18 })
-
-          Text(cfg.subtitle)
-            .fontSize(14)
-            .fontColor('#FFFFFFBB')
-            .margin({ top: 8 })
+          Text(this.mode === 'focus' ? 'AGENT正在为您播报' : cfg.subtitle)
+            .fontSize(13)
+            .fontColor('#FFFFFFAA')
+            .margin({ top: 10 })
 
           Text(cfg.desc)
             .fontSize(12)
             .fontColor('#FFFFFF66')
             .letterSpacing(2)
             .margin({ top: 6 })
-
-          this.DotVisualizer(cfg)
-
-          // 控制栏：箭头 + 播放按钮
-          Row() {
-            this.ArrowButton('left')
-            Blank().width(12)
-            this.PlayButton(cfg)
-            Blank().width(12)
-            this.ArrowButton('right')
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .margin({ top: 6, bottom: 32 })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.SpaceBetween)
+
+        // 音波
+        Column() {
+          WaveVisualizer({
+            active: this.isPlaying,
+            accent: cfg.accent,
+            bars: 32,
+            maxHeight: 38
+          })
+        }
+        .width('100%')
+        .margin({ top: 24 })
+
+        // 上一台 / 播放 / 下一台
+        Row() {
+          Stack() {
+            Polygon({ width: 14, height: 16 })
+              .points([[14, 0], [0, 8], [14, 16]])
+              .fill('#FFFFFF66')
+              .stroke(Color.Transparent)
+          }
+          .width(44).height(44)
+          .alignContent(Alignment.Center)
+          .onClick(() => {
+            if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
+          })
+
+          Blank().width(30)
+          this.PlayButton()
+          Blank().width(30)
+
+          Stack() {
+            Polygon({ width: 14, height: 16 })
+              .points([[0, 0], [14, 8], [0, 16]])
+              .fill('#FFFFFF66')
+              .stroke(Color.Transparent)
+          }
+          .width(44).height(44)
+          .alignContent(Alignment.Center)
+          .onClick(() => {
+            if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: 22, bottom: 26 })
+
+        Blank().height(4)
       }
       .width('100%').height('100%')
     }
     .width('100%')
-    .aspectRatio(0.78)
-    .borderRadius(28)
+    .aspectRatio(0.85)
+    .borderRadius(24)
     .clip(true)
-    .shadow({ radius: 40, color: '#00000088', offsetX: 0, offsetY: 12 })
   }
 
-  // 底部 CHANNELS 胶囊
-  @Builder
-  ChannelsCapsule() {
-    const cfg = MODES[this.mode];
-    Column() {
-      Text('CHANNELS')
-        .fontSize(11)
-        .fontColor('#FFFFFF55')
-        .letterSpacing(4)
-        .margin({ bottom: 14 })
+  /* ============ 电台模式 卡片 ============ */
 
-      Row() {
-        ForEach(['cn', 'en'] as Array<'cn' | 'en'>, (l: 'cn' | 'en') => {
-          Text(l === 'cn' ? '中文' : 'EN')
-            .fontSize(14)
-            .fontColor(this.lang === l ? cfg.accent : '#FFFFFFAA')
-            .fontWeight(this.lang === l ? FontWeight.Bold : FontWeight.Regular)
-            .padding({ left: 30, right: 30, top: 10, bottom: 10 })
-            .borderRadius(22)
-            .border(
-              this.lang === l
-                ? { width: 1, color: cfg.accent }
-                : { width: 1, color: Color.Transparent }
-            )
-            .animation({ duration: 250, curve: Curve.EaseOut })
-            .onClick(() => this.switchLang(l))
-        })
+  @Builder
+  ModeIcon(m: ModeId) {
+    if (m === 'focus') {
+      // 同心圆雷达样式
+      Stack() {
+        Column().width(60).height(60).borderRadius(30)
+          .border({ width: 2, color: '#2EE89D55' })
+        Column().width(42).height(42).borderRadius(21)
+          .border({ width: 2, color: '#2EE89D88' })
+        Column().width(22).height(22).borderRadius(11)
+          .backgroundColor('#2EE89D')
+          .shadow({ radius: 10, color: '#2EE89D', offsetX: 0, offsetY: 0 })
       }
-      .padding(3)
-      .borderRadius(26)
-      .backgroundColor('#FFFFFF0D')
-      .border({ width: 1, color: '#FFFFFF15' })
+      .width(60).height(60)
+      .alignContent(Alignment.Center)
+    } else {
+      // 月亮（Unicode 符号即可）
+      Stack() {
+        Text('\uD83C\uDF19')
+          .fontSize(50)
+      }
+      .width(60).height(60)
+      .alignContent(Alignment.Center)
+    }
+  }
+
+  @Builder
+  ModeCard(m: ModeId) {
+    Column() {
+      Blank().height(18)
+      this.ModeIcon(m)
+
+      Text(m === 'focus' ? '专注电台' : '睡眠电台')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+        .margin({ top: 18 })
+
+      Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
+        .fontSize(12)
+        .fontColor('#FFFFFF99')
+        .margin({ top: 8 })
+
+      Blank().layoutWeight(1)
+
+      // 底部胶囊按钮
+      Row({ space: 6 }) {
+        Row({ space: 2 }) {
+          ForEach([0.4, 0.8, 0.5, 0.9, 0.4], (lv: number, idx: number) => {
+            Column()
+              .width(2)
+              .height(4 + lv * 10)
+              .borderRadius(1)
+              .backgroundColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+          }, (_: number, idx: number) => `mc-${m}-${idx}`)
+        }
+        .alignItems(VerticalAlign.Center)
+        .height(16)
+
+        Text(m === 'focus' ? (this.mode === 'focus' && this.isPlaying ? '正在直播' : '正在直播') : '助眠播放')
+          .fontSize(13)
+          .fontColor('#FFFFFFDD')
+      }
+      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+      .borderRadius(18)
+      .backgroundColor(m === 'focus' ? '#2EE89D22' : '#8B7CF633')
+      .border({ width: 1, color: m === 'focus' ? '#2EE89D55' : '#8B7CF655' })
+      .margin({ bottom: 22 })
+    }
+    .layoutWeight(1)
+    .height(220)
+    .borderRadius(22)
+    .linearGradient({
+      angle: 160,
+      colors: m === 'focus'
+        ? [['#0A2A22', 0], ['#081828', 1]]
+        : [['#1A1342', 0], ['#0E0B28', 1]]
+    })
+    .border({
+      width: 1,
+      color: m === 'focus' ? '#2EE89D33' : '#8B7CF644'
+    })
+    .alignItems(HorizontalAlign.Center)
+    .onClick(() => this.switchMode(m))
+  }
+
+  @Builder
+  ModeRow() {
+    Row({ space: 12 }) {
+      this.ModeCard('focus')
+      this.ModeCard('sleep')
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 24, right: 24 })
   }
 
   build() {
     Stack() {
-      // 全屏深色背景
+      // 背景
       Column()
         .width('100%').height('100%')
         .linearGradient({
           angle: 180,
-          colors: [
-            ['#0A0E27', 0],
-            ['#111636', 0.5],
-            ['#0A0E27', 1]
-          ]
+          colors: [['#070B1D', 0], ['#0E1333', 0.5], ['#050814', 1]]
         })
 
-      Column() {
-        this.TopNav(MODES[this.mode])
-
+      Scroll() {
         Column() {
-          this.PlayerCard()
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .padding({ left: 20, right: 20 })
+          this.LogoHeader()
 
-        this.ChannelsCapsule()
-          .margin({ bottom: 24 })
+          this.SectionTitle('正在直播')
+          Column() {
+            this.LiveCard(this.currentCfg())
+          }
+          .width('100%')
+          .padding({ left: 24, right: 24 })
+          .margin({ bottom: 28 })
+
+          this.SectionTitle('电台模式')
+          this.ModeRow()
+
+          Blank().height(40)
+        }
+        .width('100%')
       }
-      .width('100%').height('100%')
+      .width('100%')
+      .height('100%')
+      .scrollBar(BarState.Off)
     }
-    .width('100%').height('100%')
+    .width('100%')
+    .height('100%')
   }
 }
