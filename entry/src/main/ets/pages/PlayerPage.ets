@@ -264,7 +264,7 @@ export struct PlayerPage {
           .alignItems(VerticalAlign.Center)
           .padding({ left: 10, right: 12, top: 4, bottom: 4 })
           .borderRadius(14)
-          .border({ width: 1, color: '#FFFFFF22' })
+          .border({ width: 1, color: '#FFFFFF0D' })
           .backgroundColor('#FFFFFF08')
 
           Row({ space: 2 }) {
@@ -477,9 +477,9 @@ export struct PlayerPage {
       // 同心圆雷达样式
       Stack() {
         Column().width(60).height(60).borderRadius(30)
-          .border({ width: 2, color: '#2EE89D55' })
+          .border({ width: 1.5, color: '#FFFFFF1A' })
         Column().width(42).height(42).borderRadius(21)
-          .border({ width: 2, color: '#2EE89D88' })
+          .border({ width: 1.5, color: '#FFFFFF33' })
         Column().width(22).height(22).borderRadius(11)
           .backgroundColor('#2EE89D')
           .shadow({ radius: 10, color: '#2EE89D', offsetX: 0, offsetY: 0 })
@@ -537,7 +537,7 @@ export struct PlayerPage {
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .borderRadius(18)
       .backgroundColor(m === 'focus' ? '#2EE89D22' : '#8B7CF633')
-      .border({ width: 0.5, color: m === 'focus' ? '#2EE89D44' : '#8B7CF644' })
+      .border({ width: 0.5, color: '#FFFFFF0D' })
       .margin({ bottom: 22 })
     }
     .layoutWeight(1)

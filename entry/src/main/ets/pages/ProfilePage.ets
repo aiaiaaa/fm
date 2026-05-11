@@ -150,7 +150,7 @@ export struct ProfilePage {
               Column()
                 .width(84).height(84)
                 .borderRadius(42)
-                .border({ width: 2.5, color: '#2EE89D' })
+                .border({ width: 2, color: '#FFFFFF33' })
                 .shadow({ radius: 16, color: '#2EE89D55', offsetX: 0, offsetY: 0 })
 
               // 内部
@@ -204,7 +204,7 @@ export struct ProfilePage {
             angle: 135,
             colors: [['#12183A', 0], ['#0E1230', 1]]
           })
-          .border({ width: 1, color: '#FFFFFF12' })
+          .border({ width: 1, color: '#FFFFFF0D' })
           .shadow({ radius: 12, color: '#00000044', offsetX: 0, offsetY: 4 })
           .alignItems(VerticalAlign.Center)
 
@@ -229,7 +229,7 @@ export struct ProfilePage {
             angle: 160,
             colors: [['#10152E', 0], ['#0C1028', 1]]
           })
-          .border({ width: 1, color: '#FFFFFF10' })
+          .border({ width: 0.5, color: '#FFFFFF0D' })
           .clip(true)
 
           // 外观设置
@@ -251,7 +251,7 @@ export struct ProfilePage {
             angle: 160,
             colors: [['#10152E', 0], ['#0C1028', 1]]
           })
-          .border({ width: 1, color: '#FFFFFF10' })
+          .border({ width: 0.5, color: '#FFFFFF0D' })
           .clip(true)
 
           Blank().height(80)
