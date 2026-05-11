@@ -359,9 +359,10 @@ export struct PlayerPage {
         .borderRadius(24)
         .linearGradient({
           angle: 160,
-          colors: [['#12183A', 0], ['#0B0F2A', 0.6], ['#080B22', 1]]
+          colors: [['#111622', 0], ['#0E1320', 0.6], ['#0A0E1A', 1]]
         })
-        .border({ width: 1, color: '#FFFFFF10' })
+        .border({ width: 1, color: '#FFFFFF08' })
+        .shadow({ radius: 30, color: '#00000088', offsetX: 0, offsetY: 10 })
 
       // 星空
       this.StarField()
@@ -545,12 +546,12 @@ export struct PlayerPage {
     .linearGradient({
       angle: 160,
       colors: m === 'focus'
-        ? [['#0A2A22', 0], ['#081828', 1]]
-        : [['#1A1342', 0], ['#0E0B28', 1]]
+        ? [['#0E1E1A', 0], ['#111622', 1]]
+        : [['#161230', 0], ['#111622', 1]]
     })
     .border({
       width: 0.5,
-      color: '#FFFFFF18'
+      color: '#FFFFFF0D'
     })
     .alignItems(HorizontalAlign.Center)
     .onClick(() => this.switchMode(m))
@@ -573,7 +574,7 @@ export struct PlayerPage {
         .width('100%').height('100%')
         .linearGradient({
           angle: 180,
-          colors: [['#070B1D', 0], ['#0E1333', 0.5], ['#050814', 1]]
+          colors: [['#0A0F1A', 0], ['#0D1325', 0.5], ['#080C18', 1]]
         })
 
       Scroll() {
@@ -591,7 +592,8 @@ export struct PlayerPage {
           this.SectionTitle('电台模式')
           this.ModeRow()
 
-          Blank().height(40)
+          // 留白高度需超过底部悬浮胶囊TabBar（56+20=76vp）
+          Blank().height(100)
         }
         .width('100%')
       }
