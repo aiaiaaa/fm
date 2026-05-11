@@ -77,15 +77,17 @@ struct Index {
       this.TabBarItem(0, '电台')
       this.TabBarItem(1, '个人')
     }
-    .width('100%')
-    .height(68)
-    .backgroundColor('#0A0E27EE')
-    .border({ width: { top: 0.5 }, color: '#FFFFFF12' })
-    .backdropBlur(20)
+    .width('88%')
+    .height(56)
+    .borderRadius(28)
+    .backgroundColor('#0D1230E8')
+    .border({ width: 0.5, color: '#FFFFFF15' })
+    .backdropBlur(24)
+    .shadow({ radius: 20, color: '#00000055', offsetX: 0, offsetY: -4 })
   }
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Bottom }) {
       Tabs({ barPosition: BarPosition.End, controller: this.tabsController, index: this.currentIndex }) {
         TabContent() {
           PlayerPage()
@@ -96,15 +98,18 @@ struct Index {
       }
       .barHeight(0)
       .animationDuration(220)
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .onChange((idx: number) => {
         this.currentIndex = idx;
       })
 
+      // 悬浮胶囊 TabBar
       this.BottomTabBar()
     }
     .width('100%')
     .height('100%')
+    .padding({ bottom: 20 })
     .backgroundColor('#070B1D')
   }
 }

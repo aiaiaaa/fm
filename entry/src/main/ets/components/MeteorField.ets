@@ -47,11 +47,12 @@ export struct MeteorField {
   }
 
   private spawn(): void {
-    // 从顶部靠右的区域出生，向左下方飞
-    const startX = this.areaW * (0.35 + Math.random() * 0.6);
-    const startY = -20 - Math.random() * this.areaH * 0.1;
-    const speed = 0.18 + Math.random() * 0.12;      // 像素/ms
-    const angle = (160 + Math.random() * 15) * Math.PI / 180; // 左下方向
+    // 从左上区域出生，向右下偏上方向滑动（更自然的流星轨迹）
+    const startX = -20 + Math.random() * this.areaW * 0.4;
+    const startY = -20 + Math.random() * this.areaH * 0.25;
+    const speed = 0.15 + Math.random() * 0.10;      // 像素/ms（略慢更自然）
+    // 角度 20°~45°：右下偏上方向滑行
+    const angle = (20 + Math.random() * 25) * Math.PI / 180;
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
     const ttl = 1400 + Math.random() * 1200;
@@ -96,7 +97,7 @@ export struct MeteorField {
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
-      if (m.life >= 1 || m.x < -m.len || m.y > this.areaH + m.len) {
+      if (m.life >= 1 || m.x > this.areaW + m.len || m.y > this.areaH + m.len) {
         continue;
       }
 

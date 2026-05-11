@@ -536,7 +536,7 @@ export struct PlayerPage {
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .borderRadius(18)
       .backgroundColor(m === 'focus' ? '#2EE89D22' : '#8B7CF633')
-      .border({ width: 1, color: m === 'focus' ? '#2EE89D55' : '#8B7CF655' })
+      .border({ width: 0.5, color: m === 'focus' ? '#2EE89D44' : '#8B7CF644' })
       .margin({ bottom: 22 })
     }
     .layoutWeight(1)
@@ -549,8 +549,8 @@ export struct PlayerPage {
         : [['#1A1342', 0], ['#0E0B28', 1]]
     })
     .border({
-      width: 1,
-      color: m === 'focus' ? '#2EE89D33' : '#8B7CF644'
+      width: 0.5,
+      color: '#FFFFFF18'
     })
     .alignItems(HorizontalAlign.Center)
     .onClick(() => this.switchMode(m))
