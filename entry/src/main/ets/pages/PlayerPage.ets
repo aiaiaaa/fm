@@ -3,6 +3,7 @@ import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { RadioPlayer, PlayerState } from '../services/RadioPlayer';
 import { BackgroundTask } from '../services/BackgroundTask';
+import { ListeningStats } from '../services/ListeningStats';
 import { MODES, ModeId, ModeConfig } from '../model/Modes';
 import { MeteorField } from '../components/MeteorField';
 import { WaveVisualizer } from '../components/WaveVisualizer';
@@ -72,6 +73,7 @@ export struct PlayerPage {
 
     // 初始化播放器 + AVSession + 后台任务
     const context = getContext(this) as common.UIAbilityContext;
+    ListeningStats.init(context);
     this.player.init(context, {
       onStateChange: (s: PlayerState) => {
         switch (s) {
@@ -82,15 +84,18 @@ export struct PlayerPage {
             this.isLoading = false;
             this.isPlaying = true;
             BackgroundTask.start(context);
+            ListeningStats.startCounting(this.mode === 'focus' ? 'focus' : 'sleep');
             break;
           case 'paused':
           case 'idle':
             this.isPlaying = false;
             this.isLoading = false;
+            ListeningStats.stopCounting();
             break;
           case 'error':
             this.isPlaying = false;
             this.isLoading = false;
+            ListeningStats.stopCounting();
             break;
           default:
             break;

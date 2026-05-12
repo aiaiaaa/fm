@@ -2,12 +2,13 @@ import { PlayerPage } from './PlayerPage';
 import { ProfilePage } from './ProfilePage';
 
 /**
- * 应用入口 —— 底部悬浮胶囊 Tabs
+ * 应用入口 —— 底部悬浮胶囊 Tabs（带横向光影滑块切换动效）
  */
 @Entry
 @Component
 struct Index {
   @State currentIndex: number = 0;
+  @State sliderLeft: number = 0;      // 滑块左偏移（百分比模拟: 0=左, 1=右）
   private tabsController: TabsController = new TabsController();
 
   @Builder
@@ -58,7 +59,10 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .onClick(() => {
-      this.currentIndex = index;
+      animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
+        this.currentIndex = index;
+        this.sliderLeft = index;
+      });
       this.tabsController.changeIndex(index);
     })
   }
@@ -74,17 +78,38 @@ struct Index {
         }
       }
       .barHeight(0)
-      .animationDuration(220)
+      .animationDuration(280)
       .width('100%')
       .height('100%')
       .onChange((idx: number) => {
-        this.currentIndex = idx;
+        animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
+          this.currentIndex = idx;
+          this.sliderLeft = idx;
+        });
       })
 
       // 悬浮胶囊 TabBar
-      Row() {
-        this.TabBarItem(0, '电台')
-        this.TabBarItem(1, '个人')
+      Stack() {
+        // 横向光影滑块（高亮背景跟随当前 tab）
+        Column()
+          .width('48%')
+          .height(44)
+          .borderRadius(22)
+          .linearGradient({
+            angle: 90,
+            colors: [['#52FFA118', 0], ['#52FFA108', 0.5], ['#52FFA118', 1]]
+          })
+          .border({ width: 0.5, color: '#52FFA133' })
+          .position({ x: this.sliderLeft === 0 ? '2%' : '50%', y: 6 })
+          .animation({ duration: 280, curve: Curve.EaseInOut })
+
+        // Tab items
+        Row() {
+          this.TabBarItem(0, '电台')
+          this.TabBarItem(1, '个人')
+        }
+        .width('100%')
+        .height('100%')
       }
       .width('85%')
       .height(56)
@@ -93,6 +118,7 @@ struct Index {
       .border({ width: 1, color: '#FFFFFF0D' })
       .shadow({ radius: 20, color: '#00000066', offsetX: 0, offsetY: -4 })
       .margin({ bottom: 24 })
+      .clip(true)
     }
     .width('100%')
     .height('100%')

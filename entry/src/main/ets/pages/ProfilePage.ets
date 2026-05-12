@@ -1,14 +1,13 @@
 import { window } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { ListeningStats } from '../services/ListeningStats';
 
 /**
- * "个人" Tab 页 —— 与 PlayerPage 统一深空暗黑风格
- *
- * 设计要素：
- *   - 深色渐变背景（#070B1D → #0E1333 → #050814）
- *   - 圆形头像带绿色渐变边框 + 光晕
- *   - 统计数据卡片半透明毛玻璃
- *   - 设置列表采用圆角分组 + 微边框
- *   - 所有强调色保持 #52FFA1
+ * "个人" Tab 页
+ * - 统计数据：累计总时长、专注模式时长、睡眠模式时长
+ * - 设置：自动续播、定时关闭、音质
+ * - 关于：弹窗显示版本信息
  */
 @Component
 export struct ProfilePage {
@@ -16,6 +15,9 @@ export struct ProfilePage {
   @State sleepTimer: boolean = false;
   @State darkMode: boolean = true;
   @State statusBarHeight: number = 40;
+  @State totalTime: string = '0s';
+  @State focusTime: string = '0s';
+  @State sleepTime: string = '0s';
 
   aboutToAppear(): void {
     window.getLastWindow(getContext(this)).then(win => {
@@ -23,6 +25,31 @@ export struct ProfilePage {
       this.statusBarHeight = px2vp(area.topRect.height);
     }).catch(() => {
       this.statusBarHeight = 40;
+    });
+
+    // 初始化并加载统计数据
+    const context = getContext(this) as common.UIAbilityContext;
+    ListeningStats.init(context).then(() => {
+      this.refreshStats();
+    });
+  }
+
+  onPageShow(): void {
+    this.refreshStats();
+  }
+
+  private async refreshStats(): Promise<void> {
+    const stats = await ListeningStats.getStats();
+    this.totalTime = ListeningStats.formatSeconds(stats.total);
+    this.focusTime = ListeningStats.formatSeconds(stats.focus);
+    this.sleepTime = ListeningStats.formatSeconds(stats.sleep);
+  }
+
+  private showAboutDialog(): void {
+    promptAction.showDialog({
+      title: '关于 X.FM',
+      message: 'X.FM - AI 智能电台\n\n版本：v6.10\n平台：HarmonyOS NEXT\nSDK：API 12+\n\n由 AGENT 驱动的实时资讯播报平台。\n专注模式提供深度新闻，睡眠模式提供舒缓白噪音。\n\n© 2024-2026 X.FM Team',
+      buttons: [{ text: '确定', color: '#52FFA1' }]
     });
   }
 
@@ -47,11 +74,11 @@ export struct ProfilePage {
 
       Text(value)
         .fontSize(12)
-        .fontColor('#FFFFFF55')
+        .fontColor('#5E6678')
 
       Text('\u203A')
         .fontSize(18)
-        .fontColor('#FFFFFF44')
+        .fontColor('#5E6678')
         .margin({ left: 8 })
     }
     .width('100%')
@@ -85,7 +112,7 @@ export struct ProfilePage {
 
       Toggle({ type: ToggleType.Switch, isOn: value })
         .selectedColor('#52FFA1')
-        .switchPointColor('#0A0E27')
+        .switchPointColor('#0A0F1A')
         .onChange((isOn: boolean) => onChange(isOn))
     }
     .width('100%')
@@ -102,7 +129,7 @@ export struct ProfilePage {
         .fontColor('#52FFA1')
       Text(label)
         .fontSize(11)
-        .fontColor('#FFFFFF77')
+        .fontColor('#5E6678')
         .margin({ top: 4 })
     }
     .layoutWeight(1)
@@ -111,13 +138,10 @@ export struct ProfilePage {
 
   build() {
     Stack() {
-      // 深色背景，与 PlayerPage 一致
+      // 背景
       Column()
         .width('100%').height('100%')
-        .linearGradient({
-          angle: 180,
-          colors: [['#070B1D', 0], ['#0E1333', 0.5], ['#050814', 1]]
-        })
+        .backgroundColor('#0A0F1A')
 
       Scroll() {
         Column() {
@@ -134,9 +158,7 @@ export struct ProfilePage {
 
           // 个人信息卡片
           Column() {
-            // 头像：外圈绿色渐变光环
             Stack() {
-              // 光晕
               Column()
                 .width(92).height(92)
                 .borderRadius(46)
@@ -144,24 +166,18 @@ export struct ProfilePage {
                   angle: 135,
                   colors: [['#52FFA1', 0], ['#00D2FF', 1]]
                 })
-                .opacity(0.25)
+                .opacity(0.2)
 
-              // 外环
               Column()
                 .width(84).height(84)
                 .borderRadius(42)
-                .border({ width: 2, color: '#FFFFFF33' })
-                .shadow({ radius: 16, color: '#52FFA155', offsetX: 0, offsetY: 0 })
+                .border({ width: 2, color: '#FFFFFF22' })
 
-              // 内部
               Stack() {
                 Column()
                   .width(76).height(76)
                   .borderRadius(38)
-                  .linearGradient({
-                    angle: 135,
-                    colors: [['#12183A', 0], ['#1A2248', 1]]
-                  })
+                  .backgroundColor('#111622')
 
                 Text('X')
                   .fontSize(32)
@@ -182,79 +198,79 @@ export struct ProfilePage {
 
             Text('保持专注，也享受睡眠')
               .fontSize(12)
-              .fontColor('#FFFFFF66')
+              .fontColor('#5E6678')
               .margin({ top: 6 })
           }
           .width('100%')
           .alignItems(HorizontalAlign.Center)
           .padding({ top: 8, bottom: 28 })
 
-          // 统计卡片
-          Row() {
-            this.StatItem('0h', '收听时长')
-            Column().width(1).height(28).backgroundColor('#FFFFFF15')
-            this.StatItem('0', '收藏频道')
-            Column().width(1).height(28).backgroundColor('#FFFFFF15')
-            this.StatItem('0', '专注天数')
+          // 收听统计卡片
+          Column() {
+            Text('收听统计')
+              .fontSize(12)
+              .fontColor('#5E6678')
+              .letterSpacing(2)
+              .margin({ bottom: 16 })
+
+            Row() {
+              this.StatItem(this.totalTime, '累计时长')
+              Column().width(1).height(28).backgroundColor('#FFFFFF10')
+              this.StatItem(this.focusTime, '专注模式')
+              Column().width(1).height(28).backgroundColor('#FFFFFF10')
+              this.StatItem(this.sleepTime, '睡眠模式')
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
           }
           .width('88%')
           .padding({ top: 18, bottom: 18 })
           .borderRadius(18)
-          .linearGradient({
-            angle: 135,
-            colors: [['#12183A', 0], ['#0E1230', 1]]
-          })
+          .backgroundColor('#111622')
           .border({ width: 1, color: '#FFFFFF0D' })
-          .shadow({ radius: 12, color: '#00000044', offsetX: 0, offsetY: 4 })
-          .alignItems(VerticalAlign.Center)
+          .alignItems(HorizontalAlign.Center)
 
           // 播放设置
           Text('播放设置')
             .fontSize(12)
-            .fontColor('#FFFFFF55')
+            .fontColor('#5E6678')
             .letterSpacing(2)
             .margin({ top: 32, left: 24, bottom: 10 })
             .alignSelf(ItemAlign.Start)
 
           Column() {
             this.SwitchRow('\u25B6', '启动自动续播', this.autoPlay, (v: boolean) => { this.autoPlay = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF10').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
             this.SwitchRow('\u231A', '定时关闭', this.sleepTimer, (v: boolean) => { this.sleepTimer = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF10').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
             this.SettingRow('\u266B', '音质', '标准', () => {})
           }
           .width('88%')
           .borderRadius(18)
-          .linearGradient({
-            angle: 160,
-            colors: [['#10152E', 0], ['#0C1028', 1]]
-          })
+          .backgroundColor('#111622')
           .border({ width: 0.5, color: '#FFFFFF0D' })
           .clip(true)
 
-          // 外观设置
-          Text('外观')
+          // 其他
+          Text('其他')
             .fontSize(12)
-            .fontColor('#FFFFFF55')
+            .fontColor('#5E6678')
             .letterSpacing(2)
             .margin({ top: 24, left: 24, bottom: 10 })
             .alignSelf(ItemAlign.Start)
 
           Column() {
             this.SwitchRow('\u263D', '深色主题', this.darkMode, (v: boolean) => { this.darkMode = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF10').alignSelf(ItemAlign.End)
-            this.SettingRow('\u2699', '关于 X.FM', 'v6.10', () => {})
+            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
+            this.SettingRow('\u2699', '关于 X.FM', 'v6.10', () => { this.showAboutDialog(); })
           }
           .width('88%')
           .borderRadius(18)
-          .linearGradient({
-            angle: 160,
-            colors: [['#10152E', 0], ['#0C1028', 1]]
-          })
+          .backgroundColor('#111622')
           .border({ width: 0.5, color: '#FFFFFF0D' })
           .clip(true)
 
-          Blank().height(80)
+          Blank().height(110)
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
