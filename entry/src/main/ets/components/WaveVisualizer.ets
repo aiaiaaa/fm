@@ -13,7 +13,7 @@ import { AudioVisualizer } from '../services/AudioVisualizer';
 @Component
 export struct WaveVisualizer {
   @Prop @Watch('onActiveChange') active: boolean = false;
-  @Prop accent: string = '#2EE89D';
+  @Prop accent: string = '#52FFA1';
   @Prop bars: number = 32;
   @Prop maxHeight: number = 42;
 

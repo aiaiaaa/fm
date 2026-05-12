@@ -8,7 +8,7 @@ import { window } from '@kit.ArkUI';
  *   - 圆形头像带绿色渐变边框 + 光晕
  *   - 统计数据卡片半透明毛玻璃
  *   - 设置列表采用圆角分组 + 微边框
- *   - 所有强调色保持 #2EE89D
+ *   - 所有强调色保持 #52FFA1
  */
 @Component
 export struct ProfilePage {
@@ -32,11 +32,11 @@ export struct ProfilePage {
       Stack() {
         Text(icon)
           .fontSize(16)
-          .fontColor('#2EE89D')
+          .fontColor('#52FFA1')
       }
       .width(32).height(32)
       .borderRadius(8)
-      .backgroundColor('#2EE89D15')
+      .backgroundColor('#52FFA115')
       .alignContent(Alignment.Center)
 
       Text(title)
@@ -70,11 +70,11 @@ export struct ProfilePage {
       Stack() {
         Text(icon)
           .fontSize(16)
-          .fontColor('#2EE89D')
+          .fontColor('#52FFA1')
       }
       .width(32).height(32)
       .borderRadius(8)
-      .backgroundColor('#2EE89D15')
+      .backgroundColor('#52FFA115')
       .alignContent(Alignment.Center)
 
       Text(title)
@@ -84,7 +84,7 @@ export struct ProfilePage {
         .margin({ left: 12 })
 
       Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor('#2EE89D')
+        .selectedColor('#52FFA1')
         .switchPointColor('#0A0E27')
         .onChange((isOn: boolean) => onChange(isOn))
     }
@@ -99,7 +99,7 @@ export struct ProfilePage {
       Text(value)
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#2EE89D')
+        .fontColor('#52FFA1')
       Text(label)
         .fontSize(11)
         .fontColor('#FFFFFF77')
@@ -142,7 +142,7 @@ export struct ProfilePage {
                 .borderRadius(46)
                 .linearGradient({
                   angle: 135,
-                  colors: [['#2EE89D', 0], ['#00F2FE', 1]]
+                  colors: [['#52FFA1', 0], ['#00D2FF', 1]]
                 })
                 .opacity(0.25)
 
@@ -151,7 +151,7 @@ export struct ProfilePage {
                 .width(84).height(84)
                 .borderRadius(42)
                 .border({ width: 2, color: '#FFFFFF33' })
-                .shadow({ radius: 16, color: '#2EE89D55', offsetX: 0, offsetY: 0 })
+                .shadow({ radius: 16, color: '#52FFA155', offsetX: 0, offsetY: 0 })
 
               // 内部
               Stack() {
@@ -166,7 +166,7 @@ export struct ProfilePage {
                 Text('X')
                   .fontSize(32)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor('#2EE89D')
+                  .fontColor('#52FFA1')
               }
               .width(76).height(76)
               .alignContent(Alignment.Center)

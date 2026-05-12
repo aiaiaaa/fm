@@ -222,7 +222,7 @@ export struct PlayerPage {
             .borderRadius(2)
             .linearGradient({
               angle: 180,
-              colors: [['#2EE89D', 0], ['#00F2FE', 1]]
+              colors: [['#52FFA1', 0], ['#00D2FF', 1]]
             })
         }, (i: number) => `lb-${i}`)
       }
@@ -254,8 +254,8 @@ export struct PlayerPage {
       if (title === '正在直播') {
         Row({ space: 10 }) {
           Row({ space: 6 }) {
-            Column().width(7).height(7).borderRadius(4).backgroundColor('#2EE89D')
-              .shadow({ radius: 6, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+            Column().width(7).height(7).borderRadius(4).backgroundColor('#52FFA1')
+              .shadow({ radius: 6, color: '#52FFA1', offsetX: 0, offsetY: 0 })
             Text('LIVE')
               .fontSize(12)
               .fontColor('#FFFFFFCC')
@@ -273,7 +273,7 @@ export struct PlayerPage {
                 .width(2)
                 .height(4 + lv * 14)
                 .borderRadius(1)
-                .backgroundColor('#2EE89D')
+                .backgroundColor('#52FFA1')
                 .opacity(0.65 + lv * 0.35)
             }, (_: number, idx: number) => `mini-${idx}`)
           }
@@ -315,7 +315,7 @@ export struct PlayerPage {
         .width(84)
         .height(84)
         .borderRadius(42)
-        .backgroundColor('#2EE89D')
+        .backgroundColor('#52FFA1')
         .opacity(this.isPlaying ? this.glowOpacity * 0.6 : 0.22)
         .scale({ x: this.glowScale, y: this.glowScale })
 
@@ -339,9 +339,9 @@ export struct PlayerPage {
       .width(68)
       .height(68)
       .borderRadius(34)
-      .backgroundColor('#2EE89D')
+      .backgroundColor('#52FFA1')
       .alignContent(Alignment.Center)
-      .shadow({ radius: 22, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+      .shadow({ radius: 22, color: '#52FFA1', offsetX: 0, offsetY: 0 })
     }
     .width(84)
     .height(84)
@@ -405,7 +405,7 @@ export struct PlayerPage {
 
           Text(cfg.desc)
             .fontSize(12)
-            .fontColor('#FFFFFF66')
+            .fontColor('#5E6678')
             .letterSpacing(2)
             .margin({ top: 6 })
         }
@@ -429,7 +429,7 @@ export struct PlayerPage {
           Stack() {
             Polygon({ width: 14, height: 16 })
               .points([[14, 0], [0, 8], [14, 16]])
-              .fill('#FFFFFF66')
+              .fill('#5E6678')
               .stroke(Color.Transparent)
           }
           .width(44).height(44)
@@ -445,7 +445,7 @@ export struct PlayerPage {
           Stack() {
             Polygon({ width: 14, height: 16 })
               .points([[0, 0], [14, 8], [0, 16]])
-              .fill('#FFFFFF66')
+              .fill('#5E6678')
               .stroke(Color.Transparent)
           }
           .width(44).height(44)
@@ -481,8 +481,8 @@ export struct PlayerPage {
         Column().width(42).height(42).borderRadius(21)
           .border({ width: 1.5, color: '#FFFFFF33' })
         Column().width(22).height(22).borderRadius(11)
-          .backgroundColor('#2EE89D')
-          .shadow({ radius: 10, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+          .backgroundColor('#52FFA1')
+          .shadow({ radius: 10, color: '#52FFA1', offsetX: 0, offsetY: 0 })
       }
       .width(60).height(60)
       .alignContent(Alignment.Center)
@@ -506,7 +506,7 @@ export struct PlayerPage {
       Text(m === 'focus' ? '专注电台' : '睡眠电台')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+        .fontColor(m === 'focus' ? '#52FFA1' : '#B69CFF')
         .margin({ top: 18 })
 
       Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
@@ -524,7 +524,7 @@ export struct PlayerPage {
               .width(2)
               .height(4 + lv * 10)
               .borderRadius(1)
-              .backgroundColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+              .backgroundColor(m === 'focus' ? '#52FFA1' : '#B69CFF')
           }, (_: number, idx: number) => `mc-${m}-${idx}`)
         }
         .alignItems(VerticalAlign.Center)
@@ -536,7 +536,7 @@ export struct PlayerPage {
       }
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .borderRadius(18)
-      .backgroundColor(m === 'focus' ? '#2EE89D22' : '#8B7CF633')
+      .backgroundColor(m === 'focus' ? '#52FFA122' : '#8B7CF633')
       .border({ width: 0.5, color: '#FFFFFF0D' })
       .margin({ bottom: 22 })
     }
@@ -574,7 +574,7 @@ export struct PlayerPage {
         .width('100%').height('100%')
         .linearGradient({
           angle: 180,
-          colors: [['#0A0F1A', 0], ['#0D1325', 0.5], ['#080C18', 1]]
+          colors: [['#0A0F1A', 0], ['#0A0F1A', 0.5], ['#0A0F1A', 1]]
         })
 
       Scroll() {
@@ -593,7 +593,7 @@ export struct PlayerPage {
           this.ModeRow()
 
           // 留白高度需超过底部悬浮胶囊TabBar（56+20=76vp）
-          Blank().height(100)
+          Blank().height(110)
         }
         .width('100%')
       }
