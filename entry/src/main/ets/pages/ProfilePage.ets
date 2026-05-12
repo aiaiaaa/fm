@@ -84,6 +84,7 @@ export struct ProfilePage {
     .width('100%')
     .height(52)
     .padding({ left: 14, right: 14 })
+    .focusable(false)
     .onClick(() => {
       if (onTap) {
         onTap();
@@ -278,7 +279,9 @@ export struct ProfilePage {
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
+      .focusable(false)
     }
     .width('100%').height('100%')
+    .focusable(false)
   }
 }

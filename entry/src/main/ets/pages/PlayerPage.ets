@@ -351,6 +351,7 @@ export struct PlayerPage {
     .width(84)
     .height(84)
     .alignContent(Alignment.Center)
+    .focusable(false)
     .onClick(() => this.togglePlay())
   }
 
@@ -439,6 +440,7 @@ export struct PlayerPage {
           }
           .width(44).height(44)
           .alignContent(Alignment.Center)
+          .focusable(false)
           .onClick(() => {
             if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
           })
@@ -455,6 +457,7 @@ export struct PlayerPage {
           }
           .width(44).height(44)
           .alignContent(Alignment.Center)
+          .focusable(false)
           .onClick(() => {
             if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
           })
@@ -559,6 +562,7 @@ export struct PlayerPage {
       color: '#FFFFFF0D'
     })
     .alignItems(HorizontalAlign.Center)
+    .focusable(false)
     .onClick(() => this.switchMode(m))
   }
 
@@ -605,8 +609,10 @@ export struct PlayerPage {
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
+      .focusable(false)
     }
     .width('100%')
     .height('100%')
+    .focusable(false)
   }
 }
