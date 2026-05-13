@@ -15,31 +15,37 @@ struct Index {
   @State sliderLeft: number = 0;      // 0=左, 1=右
   private tabsController: TabsController = new TabsController();
   private isAnimating: boolean = false;
+  private ignoreTabsChange: boolean = false;
 
   /** 统一切换入口：确保 index、slider、tabsController 一致 */
   private switchTab(index: number): void {
     if (index === this.currentIndex || this.isAnimating) return;
     this.isAnimating = true;
+
+    // 标记：接下来由 changeIndex 引发的 onChange 应该被忽略
+    this.ignoreTabsChange = true;
+
     animateTo({ duration: 280, curve: Curve.EaseInOut, onFinish: () => {
       this.isAnimating = false;
     } }, () => {
       this.currentIndex = index;
       this.sliderLeft = index;
     });
+
     this.tabsController.changeIndex(index);
   }
 
   @Builder
-  RadioIcon(active: boolean) {
+  RadioIcon(tabIndex: number) {
     Stack() {
       Column().width(20).height(20).borderRadius(10)
-        .border({ width: 1.5, color: active ? '#FFFFFF' : '#5E6678' })
+        .border({ width: 1.5, color: this.currentIndex === tabIndex ? '#FFFFFF' : '#5E6678' })
         .animation({ duration: 280, curve: Curve.EaseInOut })
       Column().width(10).height(10).borderRadius(5)
-        .border({ width: 1.5, color: active ? '#FFFFFF' : '#5E6678' })
+        .border({ width: 1.5, color: this.currentIndex === tabIndex ? '#FFFFFF' : '#5E6678' })
         .animation({ duration: 280, curve: Curve.EaseInOut })
       Column().width(4).height(4).borderRadius(2)
-        .backgroundColor(active ? '#FFFFFF' : '#5E6678')
+        .backgroundColor(this.currentIndex === tabIndex ? '#FFFFFF' : '#5E6678')
         .animation({ duration: 280, curve: Curve.EaseInOut })
     }
     .width(22).height(22)
@@ -47,14 +53,14 @@ struct Index {
   }
 
   @Builder
-  PersonIcon(active: boolean) {
+  PersonIcon(tabIndex: number) {
     Column() {
       Column().width(9).height(9).borderRadius(5)
-        .border({ width: 1.4, color: active ? '#FFFFFF' : '#5E6678' })
+        .border({ width: 1.4, color: this.currentIndex === tabIndex ? '#FFFFFF' : '#5E6678' })
         .animation({ duration: 280, curve: Curve.EaseInOut })
       Column().width(16).height(9)
         .borderRadius({ topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 })
-        .border({ width: 1.4, color: active ? '#FFFFFF' : '#5E6678' })
+        .border({ width: 1.4, color: this.currentIndex === tabIndex ? '#FFFFFF' : '#5E6678' })
         .animation({ duration: 280, curve: Curve.EaseInOut })
         .margin({ top: 2 })
     }
@@ -67,9 +73,9 @@ struct Index {
   TabBarItem(index: number, label: string) {
     Column() {
       if (index === 0) {
-        this.RadioIcon(this.currentIndex === index);
+        this.RadioIcon(index);
       } else {
-        this.PersonIcon(this.currentIndex === index);
+        this.PersonIcon(index);
       }
       Text(label)
         .fontSize(11)
@@ -104,7 +110,11 @@ struct Index {
       .height('100%')
       .focusable(false)
       .onChange((idx: number) => {
-        // 仅在滑动手势触发时同步状态（点击已通过 switchTab 处理）
+        if (this.ignoreTabsChange) {
+          // 忽略程序触发的切换，仅清除标记
+          this.ignoreTabsChange = false;
+          return;
+        }
         if (idx !== this.currentIndex) {
           animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
             this.currentIndex = idx;
@@ -127,7 +137,7 @@ struct Index {
         // Tab items
         Row() {
           this.TabBarItem(0, '电台')
-          this.TabBarItem(1, '个人')
+          this.TabBarItem(1, '我的')
         }
         .width('100%')
         .height('100%')

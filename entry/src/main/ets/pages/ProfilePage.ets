@@ -142,16 +142,16 @@ export struct ProfilePage {
       // 背景
       Column()
         .width('100%').height('100%')
-        .backgroundColor('#0A0F1A')
+        .backgroundColor(0x0A0F1A)
 
       Scroll() {
         Column() {
           // 顶部标题
           Row() {
-            Text('个人')
+            Text('我的')
               .fontSize(20)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
+              .fontColor(0xFFFFFF)
           }
           .width('100%')
           .padding({ left: 24, right: 24 })
@@ -194,7 +194,7 @@ export struct ProfilePage {
             Text('X.FM 听众')
               .fontSize(18)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
+              .fontColor(0xFFFFFF)
               .margin({ top: 16 })
 
             Text('保持专注，也享受睡眠')
@@ -241,9 +241,9 @@ export struct ProfilePage {
 
           Column() {
             this.SwitchRow('\u25B6', '启动自动续播', this.autoPlay, (v: boolean) => { this.autoPlay = v; })
-            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
             this.SwitchRow('\u231A', '定时关闭', this.sleepTimer, (v: boolean) => { this.sleepTimer = v; })
-            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
             this.SettingRow('\u266B', '音质', '标准', () => {})
           }
           .width('88%')
@@ -262,7 +262,7 @@ export struct ProfilePage {
 
           Column() {
             this.SwitchRow('\u263D', '深色主题', this.darkMode, (v: boolean) => { this.darkMode = v; })
-            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
             this.SettingRow('\u2699', '关于 X.FM', 'v6.10', () => { this.showAboutDialog(); })
           }
           .width('88%')

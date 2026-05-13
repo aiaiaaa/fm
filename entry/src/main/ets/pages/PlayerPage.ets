@@ -227,7 +227,7 @@ export struct PlayerPage {
             .borderRadius(2)
             .linearGradient({
               angle: 180,
-              colors: [['#52FFA1', 0], ['#00D2FF', 1]]
+              colors: [[0x52FFA1, 0], [0x00D2FF, 1]]
             })
         }, (i: number) => `lb-${i}`)
       }
@@ -237,7 +237,7 @@ export struct PlayerPage {
       Text('X.FM')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
+        .fontColor(0xFFFFFF)
         .letterSpacing(2)
     }
     .width('100%')
@@ -252,25 +252,25 @@ export struct PlayerPage {
       Text(title)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
+        .fontColor(0xFFFFFF)
         .layoutWeight(1)
 
       // 仅 "正在直播" 显示 LIVE + mini wave
       if (title === '正在直播') {
         Row({ space: 10 }) {
           Row({ space: 6 }) {
-            Column().width(7).height(7).borderRadius(4).backgroundColor('#52FFA1')
+            Column().width(7).height(7).borderRadius(4).backgroundColor(0x52FFA1)
               .shadow({ radius: 6, color: '#52FFA1', offsetX: 0, offsetY: 0 })
             Text('LIVE')
               .fontSize(12)
-              .fontColor('#CCFFFFFF')
+              .fontColor(0xCCFFFFFF)
               .letterSpacing(1)
           }
           .alignItems(VerticalAlign.Center)
           .padding({ left: 10, right: 12, top: 4, bottom: 4 })
           .borderRadius(14)
-          .border({ width: 1, color: '#0DFFFFFF' })
-          .backgroundColor('#08FFFFFF')
+          .border({ width: 1, color: 0x0DFFFFFF })
+          .backgroundColor(0x08FFFFFF)
 
           Row({ space: 2 }) {
             ForEach(this.miniBars, (lv: number, idx: number) => {
