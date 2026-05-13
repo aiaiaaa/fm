@@ -63,12 +63,12 @@ export struct ProfilePage {
       }
       .width(32).height(32)
       .borderRadius(8)
-      .backgroundColor('#52FFA115')
+      .backgroundColor('#1552FFA1')
       .alignContent(Alignment.Center)
 
       Text(title)
         .fontSize(14)
-        .fontColor('#FFFFFFDD')
+        .fontColor('#DDFFFFFF')
         .layoutWeight(1)
         .margin({ left: 12 })
 
@@ -102,12 +102,12 @@ export struct ProfilePage {
       }
       .width(32).height(32)
       .borderRadius(8)
-      .backgroundColor('#52FFA115')
+      .backgroundColor('#1552FFA1')
       .alignContent(Alignment.Center)
 
       Text(title)
         .fontSize(14)
-        .fontColor('#FFFFFFDD')
+        .fontColor('#DDFFFFFF')
         .layoutWeight(1)
         .margin({ left: 12 })
 
@@ -172,7 +172,7 @@ export struct ProfilePage {
               Column()
                 .width(84).height(84)
                 .borderRadius(42)
-                .border({ width: 2, color: '#FFFFFF22' })
+                .border({ width: 2, color: '#22FFFFFF' })
 
               Stack() {
                 Column()
@@ -216,9 +216,9 @@ export struct ProfilePage {
 
             Row() {
               this.StatItem(this.totalTime, '累计时长')
-              Column().width(1).height(28).backgroundColor('#FFFFFF10')
+              Column().width(1).height(28).backgroundColor('#10FFFFFF')
               this.StatItem(this.focusTime, '专注模式')
-              Column().width(1).height(28).backgroundColor('#FFFFFF10')
+              Column().width(1).height(28).backgroundColor('#10FFFFFF')
               this.StatItem(this.sleepTime, '睡眠模式')
             }
             .width('100%')
@@ -228,7 +228,7 @@ export struct ProfilePage {
           .padding({ top: 18, bottom: 18 })
           .borderRadius(18)
           .backgroundColor('#111622')
-          .border({ width: 1, color: '#FFFFFF0D' })
+          .border({ width: 1, color: '#0DFFFFFF' })
           .alignItems(HorizontalAlign.Center)
 
           // 播放设置
@@ -241,15 +241,15 @@ export struct ProfilePage {
 
           Column() {
             this.SwitchRow('\u25B6', '启动自动续播', this.autoPlay, (v: boolean) => { this.autoPlay = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
             this.SwitchRow('\u231A', '定时关闭', this.sleepTimer, (v: boolean) => { this.sleepTimer = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
             this.SettingRow('\u266B', '音质', '标准', () => {})
           }
           .width('88%')
           .borderRadius(18)
           .backgroundColor('#111622')
-          .border({ width: 0.5, color: '#FFFFFF0D' })
+          .border({ width: 0.5, color: '#0DFFFFFF' })
           .clip(true)
 
           // 其他
@@ -262,13 +262,13 @@ export struct ProfilePage {
 
           Column() {
             this.SwitchRow('\u263D', '深色主题', this.darkMode, (v: boolean) => { this.darkMode = v; })
-            Column().width('85%').height(0.5).backgroundColor('#FFFFFF0D').alignSelf(ItemAlign.End)
+            Column().width('85%').height(0.5).backgroundColor('#0DFFFFFF').alignSelf(ItemAlign.End)
             this.SettingRow('\u2699', '关于 X.FM', 'v6.10', () => { this.showAboutDialog(); })
           }
           .width('88%')
           .borderRadius(18)
           .backgroundColor('#111622')
-          .border({ width: 0.5, color: '#FFFFFF0D' })
+          .border({ width: 0.5, color: '#0DFFFFFF' })
           .clip(true)
 
           Blank().height(110)

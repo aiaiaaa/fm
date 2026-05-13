@@ -263,14 +263,14 @@ export struct PlayerPage {
               .shadow({ radius: 6, color: '#52FFA1', offsetX: 0, offsetY: 0 })
             Text('LIVE')
               .fontSize(12)
-              .fontColor('#FFFFFFCC')
+              .fontColor('#CCFFFFFF')
               .letterSpacing(1)
           }
           .alignItems(VerticalAlign.Center)
           .padding({ left: 10, right: 12, top: 4, bottom: 4 })
           .borderRadius(14)
-          .border({ width: 1, color: '#FFFFFF0D' })
-          .backgroundColor('#FFFFFF08')
+          .border({ width: 1, color: '#0DFFFFFF' })
+          .backgroundColor('#08FFFFFF')
 
           Row({ space: 2 }) {
             ForEach(this.miniBars, (lv: number, idx: number) => {
@@ -367,8 +367,8 @@ export struct PlayerPage {
           angle: 160,
           colors: [['#111622', 0], ['#0E1320', 0.6], ['#0A0E1A', 1]]
         })
-        .border({ width: 1, color: '#FFFFFF08' })
-        .shadow({ radius: 30, color: '#00000088', offsetX: 0, offsetY: 10 })
+        .border({ width: 1, color: '#08FFFFFF' })
+        .shadow({ radius: 30, color: '#88000000', offsetX: 0, offsetY: 10 })
 
       // 星空
       this.StarField()
@@ -386,9 +386,9 @@ export struct PlayerPage {
           Text('AGENT')
             .fontSize(12).fontColor(cfg.accent).fontWeight(FontWeight.Medium)
           Text('·')
-            .fontSize(12).fontColor('#FFFFFF88')
+            .fontSize(12).fontColor('#88FFFFFF')
           Text(this.mode === 'focus' ? '实时播报' : '助眠播放')
-            .fontSize(12).fontColor('#FFFFFFCC')
+            .fontSize(12).fontColor('#CCFFFFFF')
         }
         .width('100%')
         .padding({ left: 22, top: 20 })
@@ -406,7 +406,7 @@ export struct PlayerPage {
 
           Text(this.mode === 'focus' ? 'AGENT正在为您播报' : cfg.subtitle)
             .fontSize(13)
-            .fontColor('#FFFFFFAA')
+            .fontColor('#AAFFFFFF')
             .margin({ top: 10 })
 
           Text(cfg.desc)
@@ -485,9 +485,9 @@ export struct PlayerPage {
       // 同心圆雷达样式
       Stack() {
         Column().width(60).height(60).borderRadius(30)
-          .border({ width: 1.5, color: '#FFFFFF1A' })
+          .border({ width: 1.5, color: '#1AFFFFFF' })
         Column().width(42).height(42).borderRadius(21)
-          .border({ width: 1.5, color: '#FFFFFF33' })
+          .border({ width: 1.5, color: '#33FFFFFF' })
         Column().width(22).height(22).borderRadius(11)
           .backgroundColor('#52FFA1')
           .shadow({ radius: 10, color: '#52FFA1', offsetX: 0, offsetY: 0 })
@@ -519,7 +519,7 @@ export struct PlayerPage {
 
       Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
         .fontSize(12)
-        .fontColor('#FFFFFF99')
+        .fontColor('#99FFFFFF')
         .margin({ top: 8 })
 
       Blank().layoutWeight(1)
@@ -540,12 +540,12 @@ export struct PlayerPage {
 
         Text(m === 'focus' ? (this.mode === 'focus' && this.isPlaying ? '正在直播' : '正在直播') : '助眠播放')
           .fontSize(13)
-          .fontColor('#FFFFFFDD')
+          .fontColor('#DDFFFFFF')
       }
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .borderRadius(18)
-      .backgroundColor(m === 'focus' ? '#52FFA122' : '#8B7CF633')
-      .border({ width: 0.5, color: '#FFFFFF0D' })
+      .backgroundColor(m === 'focus' ? '#2252FFA1' : '#338B7CF6')
+      .border({ width: 0.5, color: '#0DFFFFFF' })
       .margin({ bottom: 22 })
     }
     .layoutWeight(1)
@@ -559,7 +559,7 @@ export struct PlayerPage {
     })
     .border({
       width: 0.5,
-      color: '#FFFFFF0D'
+      color: '#0DFFFFFF'
     })
     .alignItems(HorizontalAlign.Center)
     .focusable(false)

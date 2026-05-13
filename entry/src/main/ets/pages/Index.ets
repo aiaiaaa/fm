@@ -104,7 +104,7 @@ struct Index {
           .width('48%')
           .height(44)
           .borderRadius(22)
-          .backgroundColor('#FFFFFF10')
+          .backgroundColor('#10FFFFFF')
           .position({ x: this.sliderLeft === 0 ? '2%' : '50%', y: 6 })
           .animation({ duration: 280, curve: Curve.EaseInOut })
 
@@ -120,7 +120,7 @@ struct Index {
       .height(56)
       .borderRadius(30)
       .backgroundColor('#111622')
-      .shadow({ radius: 20, color: '#00000066', offsetX: 0, offsetY: -4 })
+      .shadow({ radius: 20, color: '#66000000', offsetX: 0, offsetY: -4 })
       .margin({ bottom: 24 })
       .clip(true)
       .focusable(false)
