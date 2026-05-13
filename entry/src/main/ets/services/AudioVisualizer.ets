@@ -72,8 +72,10 @@ export class AudioVisualizer {
 
   /**
    * 每一个采样 tick：生成 bars 个 [0,1] 的值。
-   * - active 为 true：正常钟形波（振幅与系统音量正相关）
-   * - active 为 false：极低静默线
+   * - active 为 true：正常钟形波（振幅与系统音量正相关），模拟真实音频律动
+   * - active 为 false：极低静默线（几乎为 0）
+   *
+   * 优化：增加更多频率分量和随机性，让音波看起来更贴近真实 m3u8 音频播放效果
    */
   private tick(): void {
     if (!this.cb) return;
@@ -83,17 +85,26 @@ export class AudioVisualizer {
     const center = (N - 1) / 2;
     const levels: number[] = new Array(N);
 
-    const baseGain = this.active ? 1.0 : 0.08;
+    const baseGain = this.active ? 1.0 : 0.05;
     const volumeGain = 0.5 + this.systemVolume * 0.7;
 
     for (let i = 0; i < N; i++) {
       const x = (i - center) / center;            // -1..1
-      const envelope = Math.exp(-x * x * 2.2);    // 中间高两边低
-      const lo = Math.sin(this.phase * 0.7 + i * 0.25) * 0.35;
-      const mid = Math.sin(this.phase * 1.4 + i * 0.55) * 0.45;
-      const beat = this.active ? (Math.random() * 0.2 - 0.1) : 0;
-      const v = Math.abs(lo + mid + beat) * envelope * baseGain * volumeGain;
-      levels[i] = Math.max(0.06, Math.min(1, 0.12 + v * 1.35));
+      const envelope = Math.exp(-x * x * 2.2);    // 中间高两边低（钟形）
+
+      if (this.active) {
+        // 多频率叠加：模拟真实音频频谱的动态变化
+        const lo = Math.sin(this.phase * 0.6 + i * 0.2) * 0.30;
+        const mid = Math.sin(this.phase * 1.3 + i * 0.5) * 0.40;
+        const hi = Math.sin(this.phase * 2.1 + i * 0.9) * 0.20;
+        const beat = (Math.random() * 0.25 - 0.125);  // 随机微扰模拟节奏
+        const v = Math.abs(lo + mid + hi + beat) * envelope * baseGain * volumeGain;
+        levels[i] = Math.max(0.08, Math.min(1, 0.15 + v * 1.4));
+      } else {
+        // 静默状态：极低但不完全为 0，保持微弱呼吸感
+        const breath = Math.sin(this.phase * 0.2 + i * 0.3) * 0.02;
+        levels[i] = Math.max(0.04, 0.06 + breath) * envelope;
+      }
     }
     this.cb(levels, this.active);
   }

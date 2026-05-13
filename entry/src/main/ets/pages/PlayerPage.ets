@@ -372,8 +372,8 @@ export struct PlayerPage {
 
       // 星空
       this.StarField()
-      // 流星层
-      MeteorField({ accent: cfg.accent, accentSecond: cfg.accentSecond, density: 5 })
+      // 流星层（降低密度到 3，匹配 CSS 6s 周期的低频效果）
+      MeteorField({ accent: cfg.accent, accentSecond: cfg.accentSecond, density: 3 })
 
       Column() {
         // 顶部标签 "AGENT · 实时播报"

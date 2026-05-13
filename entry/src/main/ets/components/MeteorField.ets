@@ -1,11 +1,18 @@
 /**
- * Canvas 版流星场 —— 替代原先用 animateTo 叠位移实现的 Meteor。
+ * Canvas 版流星场 —— 还原 CSS 设计稿样式
  *
- * 特性：
- *   - 使用 RenderingContext 每帧重绘，支持真正平滑的渐变尾迹
- *   - 每颗流星生命周期独立（随机出生点、速度、长度、颜色）
- *   - 自适应父容器尺寸（onAreaChange）
- *   - 低性能占用：~60fps 但每帧只做少量绘制
+ * CSS 参考规格：
+ *   - 流星方向：rotate(-45deg)，即从右上往左下
+ *   - 宽度 2rpx，尾迹长度 80rpx
+ *   - 颜色渐变：从 rgba(82,255,161,0) → rgba(82,255,161,1)
+ *   - 头部白色亮点带 box-shadow: 0 0 16rpx #52FFA1, 0 0 24rpx #00D2FF
+ *   - 动画周期 6s，频率大幅降低
+ *
+ * 优化：
+ *   - 降低出生频率（spawnCooldown 增大到 3000~5000ms）
+ *   - 同屏最大 3 颗（density 默认降到 3）
+ *   - 流星寿命延长到 3000~5000ms 匹配 6s 的视觉节奏
+ *   - 角度固定为 -45°（即向右下 45° 滑行，与 CSS rotate(-45deg) 一致）
  */
 interface Meteor {
   x: number;
@@ -23,9 +30,9 @@ interface Meteor {
 
 @Component
 export struct MeteorField {
-  @Prop accent: string = '#2EE89D';
-  @Prop accentSecond: string = '#9FFFD8';
-  @Prop density: number = 5;       // 同屏最大流星数
+  @Prop accent: string = '#52FFA1';
+  @Prop accentSecond: string = '#00D2FF';
+  @Prop density: number = 3;       // 同屏最大流星数（降低频率）
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -47,17 +54,23 @@ export struct MeteorField {
   }
 
   private spawn(): void {
-    // 从左上区域出生，向右下偏上方向滑动（更自然的流星轨迹）
-    const startX = -20 + Math.random() * this.areaW * 0.4;
-    const startY = -20 + Math.random() * this.areaH * 0.25;
-    const speed = 0.15 + Math.random() * 0.10;      // 像素/ms（略慢更自然）
-    // 角度 20°~45°：右下偏上方向滑行
-    const angle = (20 + Math.random() * 25) * Math.PI / 180;
+    // CSS: position absolute, top: -100rpx → 从画布顶部之上出发
+    // CSS: rotate(-45deg) → 从右上向左下运动（角度 135°）
+    // 出生点：随机分布在顶部区域偏右侧（让流星从右上入场）
+    const startX = this.areaW * 0.3 + Math.random() * this.areaW * 0.7;
+    const startY = -40 - Math.random() * 60;
+
+    // 固定 45° 方向：向左下运动（对应 CSS rotate(-45deg) 的视觉效果）
+    const angle = 135 * Math.PI / 180;  // 135° = 向左下
+    const speed = 0.08 + Math.random() * 0.04;  // 慢速滑行，匹配 6s 周期
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
-    const ttl = 1400 + Math.random() * 1200;
-    const len = 60 + Math.random() * 80;
-    const useSecond = Math.random() < 0.4;
+
+    // 寿命 3000~5000ms，匹配 6s animation 周期
+    const ttl = 3000 + Math.random() * 2000;
+    // CSS: height: 80rpx → 尾迹长度约 40px（rpx ≈ 0.5px）
+    const len = 36 + Math.random() * 16;
+
     this.meteors.push({
       x: startX,
       y: startY,
@@ -67,9 +80,9 @@ export struct MeteorField {
       life: 0,
       ttl,
       elapsed: 0,
-      colorMain: useSecond ? this.accentSecond : this.accent,
-      colorTail: useSecond ? this.accentSecond : this.accent,
-      width: 1.2 + Math.random() * 0.8
+      colorMain: this.accent,        // #52FFA1
+      colorTail: this.accent,        // 渐变尾部同色，透明度渐变
+      width: 1                        // CSS: width: 2rpx ≈ 1px
     });
   }
 
@@ -79,11 +92,11 @@ export struct MeteorField {
     const dt = this.lastTs === 0 ? 16 : Math.min(64, ts - this.lastTs);
     this.lastTs = ts;
 
-    // 出生节流
+    // 出生节流：大幅增大间隔（3000~5000ms），匹配低频出现
     this.spawnCooldown -= dt;
     if (this.spawnCooldown <= 0 && this.meteors.length < this.density) {
       this.spawn();
-      this.spawnCooldown = 600 + Math.random() * 800;
+      this.spawnCooldown = 3000 + Math.random() * 2000;
     }
 
     const ctx = this.context;
@@ -97,7 +110,7 @@ export struct MeteorField {
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
-      if (m.life >= 1 || m.x > this.areaW + m.len || m.y > this.areaH + m.len) {
+      if (m.life >= 1 || m.x < -m.len || m.y > this.areaH + m.len) {
         continue;
       }
 
@@ -106,20 +119,21 @@ export struct MeteorField {
       const tailX = m.x - Math.cos(dir) * m.len;
       const tailY = m.y - Math.sin(dir) * m.len;
 
-      // 淡入淡出：前 15% 淡入，后 30% 淡出
+      // 淡入淡出：前 10% 淡入，后 25% 淡出（更长的可见时间）
       let alpha = 1;
-      if (m.life < 0.15) {
-        alpha = m.life / 0.15;
-      } else if (m.life > 0.7) {
-        alpha = 1 - (m.life - 0.7) / 0.3;
+      if (m.life < 0.10) {
+        alpha = m.life / 0.10;
+      } else if (m.life > 0.75) {
+        alpha = 1 - (m.life - 0.75) / 0.25;
       }
       alpha = Math.max(0, Math.min(1, alpha));
 
-      // 线条尾巴：渐变从透明 → 主色
+      // CSS 渐变：linear-gradient(to bottom, rgba(82,255,161,0), rgba(82,255,161,1))
+      // 尾部透明 → 头部不透明
       const grad = ctx.createLinearGradient(tailX, tailY, m.x, m.y);
-      grad.addColorStop(0, '#00000000');
-      grad.addColorStop(0.6, this.hexWithAlpha(m.colorTail, alpha * 0.55));
-      grad.addColorStop(1, this.hexWithAlpha(m.colorMain, alpha));
+      grad.addColorStop(0, this.hexWithAlpha(m.colorTail, 0));          // 尾部完全透明
+      grad.addColorStop(0.4, this.hexWithAlpha(m.colorTail, alpha * 0.3));
+      grad.addColorStop(1, this.hexWithAlpha(m.colorMain, alpha * 0.9)); // 头部高亮
 
       ctx.lineWidth = m.width;
       ctx.lineCap = 'round';
@@ -129,13 +143,22 @@ export struct MeteorField {
       ctx.lineTo(m.x, m.y);
       ctx.stroke();
 
-      // 头部亮点
+      // CSS: 头部白色亮点 + box-shadow: 0 0 16rpx $neon-green, 0 0 24rpx #00D2FF
       ctx.beginPath();
       ctx.fillStyle = this.hexWithAlpha('#FFFFFF', alpha);
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = m.colorMain;
-      ctx.arc(m.x, m.y, m.width * 1.4, 0, Math.PI * 2);
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = this.accent;     // #52FFA1 glow
+      ctx.arc(m.x, m.y, 2.5, 0, Math.PI * 2);
       ctx.fill();
+
+      // 第二层 glow（#00D2FF）
+      ctx.beginPath();
+      ctx.fillStyle = this.hexWithAlpha('#FFFFFF', alpha * 0.6);
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = this.accentSecond;  // #00D2FF glow
+      ctx.arc(m.x, m.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.shadowBlur = 0;
 
       next.push(m);
@@ -144,7 +167,6 @@ export struct MeteorField {
   }
 
   private hexWithAlpha(hex: string, alpha: number): string {
-    // 支持 #RRGGBB 或 #AARRGGBB（鸿蒙风格），统一转为 #RRGGBBAA
     let r = 255;
     let g = 255;
     let b = 255;
@@ -171,7 +193,6 @@ export struct MeteorField {
       .width('100%')
       .height('100%')
       .onReady(() => {
-        // 初次渲染
         this.lastTs = 0;
         this.loop();
       })
@@ -185,7 +206,6 @@ export struct MeteorField {
     if (!this.running) return;
     const now = Date.now();
     this.step(now);
-    // 下一帧
     setTimeout(() => this.loop(), 16);
   }
 }

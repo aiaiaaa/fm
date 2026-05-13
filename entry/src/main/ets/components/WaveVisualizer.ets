@@ -23,7 +23,7 @@ export struct WaveVisualizer {
   private visualizer: AudioVisualizer = new AudioVisualizer();
 
   aboutToAppear(): void {
-    this.levels = new Array(this.bars).fill(0.08);
+    this.levels = new Array(this.bars).fill(0.04);
     this.visualizer.start({ bars: this.bars, intervalMs: 90 }, (levels: number[], realActive: boolean) => {
       animateTo({ duration: 90, curve: Curve.Linear }, () => {
         this.levels = levels;

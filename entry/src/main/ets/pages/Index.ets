@@ -4,6 +4,9 @@ import { ProfilePage } from './ProfilePage';
 /**
  * 应用入口 —— 底部悬浮胶囊 Tabs
  * 切换动效：淡白色光影滑块跟随当前 tab 滑动，icon/text 颜色平滑过渡
+ *
+ * 修复：使用统一的 switchTab() 方法处理切换逻辑，避免 onChange 和 onClick 双重触发导致的
+ * 高亮状态不一致问题。增加 isAnimating 锁防止快速点击时的状态错乱。
  */
 @Entry
 @Component
@@ -11,6 +14,20 @@ struct Index {
   @State currentIndex: number = 0;
   @State sliderLeft: number = 0;      // 0=左, 1=右
   private tabsController: TabsController = new TabsController();
+  private isAnimating: boolean = false;
+
+  /** 统一切换入口：确保 index、slider、tabsController 一致 */
+  private switchTab(index: number): void {
+    if (index === this.currentIndex || this.isAnimating) return;
+    this.isAnimating = true;
+    animateTo({ duration: 280, curve: Curve.EaseInOut, onFinish: () => {
+      this.isAnimating = false;
+    } }, () => {
+      this.currentIndex = index;
+      this.sliderLeft = index;
+    });
+    this.tabsController.changeIndex(index);
+  }
 
   @Builder
   RadioIcon(active: boolean) {
@@ -67,11 +84,7 @@ struct Index {
     .alignItems(HorizontalAlign.Center)
     .focusable(false)
     .onClick(() => {
-      animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
-        this.currentIndex = index;
-        this.sliderLeft = index;
-      });
-      this.tabsController.changeIndex(index);
+      this.switchTab(index);
     })
   }
 
@@ -91,10 +104,13 @@ struct Index {
       .height('100%')
       .focusable(false)
       .onChange((idx: number) => {
-        animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
-          this.currentIndex = idx;
-          this.sliderLeft = idx;
-        });
+        // 仅在滑动手势触发时同步状态（点击已通过 switchTab 处理）
+        if (idx !== this.currentIndex) {
+          animateTo({ duration: 280, curve: Curve.EaseInOut }, () => {
+            this.currentIndex = idx;
+            this.sliderLeft = idx;
+          });
+        }
       })
 
       // 悬浮胶囊 TabBar
