@@ -84,6 +84,11 @@ export class RadioPlayer {
   private bindPlayerEvents(p: media.AVPlayer): void {
     p.on('stateChange', (state: string, _reason: media.StateChangeReason) => {
       hilog.info(0x0000, TAG, `[stateChange] avplayer=${state}, internal=${this.state}`);
+      // 如果已经进入 error 状态，忽略后续的状态回调
+      if (this.state === 'error') {
+        hilog.warn(0x0000, TAG, `[stateChange] ignored because already in error state`);
+        return;
+      }
       switch (state) {
         case 'idle':
           if (this.state !== 'loading') {
@@ -94,6 +99,11 @@ export class RadioPlayer {
           hilog.info(0x0000, TAG, `[stateChange] initialized -> waiting microtask then set audioRendererInfo + prepare()`);
           // 使用微任务延迟确保 AVPlayer 内部状态完全切换到 initialized
           Promise.resolve().then(() => {
+            // 再次检查是否已进入 error（可能在等待微任务期间收到了 error 事件）
+            if (this.state === 'error') {
+              hilog.warn(0x0000, TAG, `[initialized] aborted: already in error state`);
+              return;
+            }
             hilog.info(0x0000, TAG, `[initialized] now setting audioRendererInfo, player.state = ${p.state}`);
             try {
               p.audioRendererInfo = {

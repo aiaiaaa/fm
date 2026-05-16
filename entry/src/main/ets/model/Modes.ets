@@ -32,7 +32,7 @@ export const MODES: ModesMap = {
     accentSecond: '#00D2FF',
     bgFrom: '#0E1726',
     bgTo: '#0A1020',
-    url: 'https://ngcdn001.cnr.cn/live/zgzs/index.m3u8'
+    url: 'https://lhttp.qtfm.cn/live/20500010/64k.mp3'
   },
   sleep: {
     id: 'sleep',
@@ -44,6 +44,6 @@ export const MODES: ModesMap = {
     accentSecond: '#D6A2FF',
     bgFrom: '#1A1040',
     bgTo: '#0A0820',
-    url: 'https://ngcdn001.cnr.cn/live/yyzs/index.m3u8'
+    url: 'https://koe.bbg.fm/channels/2/playlist.m3u8'
   }
 };
