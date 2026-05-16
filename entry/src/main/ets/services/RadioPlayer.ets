@@ -32,11 +32,10 @@ export class RadioPlayer {
   private currentTrack: TrackInfo = { title: 'X.FM', artist: 'X.FM', album: 'AGENT实时广播' };
   private callbacks: RadioPlayerCallbacks = {};
   private state: PlayerState = 'idle';
+  private loadTimeoutId: number = -1;
 
   async init(context: common.UIAbilityContext, cb: RadioPlayerCallbacks): Promise<void> {
     this.callbacks = cb;
-    this.player = await media.createAVPlayer();
-    this.bindPlayerEvents();
 
     // 创建 AVSession —— 锁屏控件 / 耳机线控入口
     try {
@@ -47,43 +46,66 @@ export class RadioPlayer {
     } catch (e) {
       hilog.error(0x0000, TAG, `createAVSession failed: ${JSON.stringify(e)}`);
     }
+
+    hilog.info(0x0000, TAG, `init: AVSession ready, player will be created on first load`);
   }
 
   private setState(s: PlayerState): void {
     this.state = s;
+    hilog.info(0x0000, TAG, `setState: ${s}`);
     this.callbacks.onStateChange?.(s);
     this.updateSessionPlaybackState(s);
   }
 
-  private bindPlayerEvents(): void {
-    if (!this.player) {
-      return;
+  /**
+   * 每次 load 都重新创建 AVPlayer 实例，确保干净的状态
+   * 这是 HarmonyOS AVPlayer 最可靠的使用模式
+   */
+  private async createFreshPlayer(): Promise<media.AVPlayer> {
+    // 先释放旧的
+    if (this.player) {
+      try {
+        this.player.off('stateChange');
+        this.player.off('error');
+        await this.player.release();
+      } catch (e) {
+        hilog.warn(0x0000, TAG, `release old player: ${JSON.stringify(e)}`);
+      }
+      this.player = null;
     }
-    const p = this.player;
 
+    const p = await media.createAVPlayer();
+    hilog.info(0x0000, TAG, `createFreshPlayer: created, state = ${p.state}`);
+    this.player = p;
+    this.bindPlayerEvents(p);
+    return p;
+  }
+
+  private bindPlayerEvents(p: media.AVPlayer): void {
     p.on('stateChange', (state: string, _reason: media.StateChangeReason) => {
-      hilog.info(0x0000, TAG, `AVPlayer state: ${state}, internal state: ${this.state}`);
+      hilog.info(0x0000, TAG, `[stateChange] avplayer=${state}, internal=${this.state}`);
       switch (state) {
         case 'idle':
-          // 如果正处于 loading 状态（reset 后准备设置 url），不要覆盖为 idle
           if (this.state !== 'loading') {
             this.setState('idle');
           }
           break;
         case 'initialized':
-          p.audioRendererInfo = {
-            usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
-            rendererFlags: 0
-          };
+          hilog.info(0x0000, TAG, `[stateChange] initialized -> calling prepare()`);
           p.prepare().catch((e: Error) => {
             hilog.error(0x0000, TAG, `prepare failed: ${JSON.stringify(e)}`);
+            this.clearLoadTimeout();
             this.callbacks.onError?.(e.message);
+            this.setState('error');
           });
           break;
         case 'prepared':
+          hilog.info(0x0000, TAG, `[stateChange] prepared -> calling play()`);
           p.play().catch((e: Error) => {
             hilog.error(0x0000, TAG, `play failed: ${JSON.stringify(e)}`);
+            this.clearLoadTimeout();
             this.callbacks.onError?.(e.message);
+            this.setState('error');
           });
           break;
         case 'playing':
@@ -102,12 +124,14 @@ export class RadioPlayer {
           this.setState('error');
           break;
         default:
+          hilog.info(0x0000, TAG, `[stateChange] unhandled state: ${state}`);
           break;
       }
     });
 
     p.on('error', (err) => {
-      hilog.error(0x0000, TAG, `AVPlayer error: ${JSON.stringify(err)}`);
+      hilog.error(0x0000, TAG, `[on error] ${JSON.stringify(err)}`);
+      this.clearLoadTimeout();
       this.setState('error');
       this.callbacks.onError?.(err.message || 'unknown');
     });
@@ -178,41 +202,40 @@ export class RadioPlayer {
     this.updateSessionMetadata();
   }
 
-  private loadTimeoutId: number = -1;
-
   async load(url: string): Promise<void> {
-    if (!this.player) {
-      return;
-    }
     try {
       this.currentUrl = url;
       this.setState('loading');
-      // AVPlayer 必须在 idle 状态才能设置 url
-      // 只有非 idle 状态才需要 reset；idle 状态直接设置 url 即可
-      const currentState = this.player.state;
-      hilog.info(0x0000, TAG, `load: current AVPlayer state = ${currentState}, target url = ${url}`);
-      if (currentState !== 'idle') {
-        await this.player.reset();
-        hilog.info(0x0000, TAG, `load: reset done, now setting url`);
-      }
 
-      // 启动超时保护：15 秒内若未进入 playing 则报错
+      // 每次 load 都创建全新的 AVPlayer 实例
+      const p = await this.createFreshPlayer();
+
+      hilog.info(0x0000, TAG, `load: fresh player state = ${p.state}, setting audioRendererInfo`);
+
+      // 在 idle 状态下先设置音频渲染参数
+      p.audioRendererInfo = {
+        usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+        rendererFlags: 0
+      };
+
+      // 启动超时保护：20 秒
       this.clearLoadTimeout();
       this.loadTimeoutId = setTimeout(() => {
         if (this.state === 'loading') {
-          hilog.error(0x0000, TAG, `load timeout: no stateChange after 15s, url may be unreachable`);
-          this.callbacks.onError?.('加载超时，请检查网络或更换电台');
+          hilog.error(0x0000, TAG, `load timeout after 20s, url: ${url}`);
+          this.callbacks.onError?.('加载超时，请检查网络');
           this.setState('error');
-          // 尝试 reset 回 idle
-          this.player?.reset().catch(() => {});
+          p.reset().catch(() => {});
         }
-      }, 15000);
+      }, 20000);
 
-      this.player.url = url;
-      hilog.info(0x0000, TAG, `load: url has been set, waiting for initialized callback...`);
+      // 设置 url 触发状态流转: idle -> initialized -> prepared -> playing
+      hilog.info(0x0000, TAG, `load: setting url = ${url}`);
+      p.url = url;
+      hilog.info(0x0000, TAG, `load: url has been set, waiting for stateChange...`);
     } catch (e) {
       const err = e as Error;
-      hilog.error(0x0000, TAG, `load failed: ${JSON.stringify(err)}`);
+      hilog.error(0x0000, TAG, `load exception: ${JSON.stringify(err)}`);
       this.callbacks.onError?.(err.message);
       this.setState('error');
       this.clearLoadTimeout();
@@ -228,6 +251,9 @@ export class RadioPlayer {
 
   async play(): Promise<void> {
     if (!this.player) {
+      if (this.currentUrl) {
+        await this.load(this.currentUrl);
+      }
       return;
     }
     try {
@@ -265,8 +291,11 @@ export class RadioPlayer {
   }
 
   async release(): Promise<void> {
+    this.clearLoadTimeout();
     if (this.player) {
       try {
+        this.player.off('stateChange');
+        this.player.off('error');
         await this.player.release();
       } catch (e) {
         hilog.error(0x0000, TAG, `release failed: ${JSON.stringify(e)}`);
