@@ -87,6 +87,7 @@ export class RadioPlayer {
           });
           break;
         case 'playing':
+          this.clearLoadTimeout();
           this.setState('playing');
           break;
         case 'paused':
@@ -97,6 +98,7 @@ export class RadioPlayer {
           this.setState('idle');
           break;
         case 'error':
+          this.clearLoadTimeout();
           this.setState('error');
           break;
         default:
@@ -176,6 +178,8 @@ export class RadioPlayer {
     this.updateSessionMetadata();
   }
 
+  private loadTimeoutId: number = -1;
+
   async load(url: string): Promise<void> {
     if (!this.player) {
       return;
@@ -189,16 +193,36 @@ export class RadioPlayer {
       hilog.info(0x0000, TAG, `load: current AVPlayer state = ${currentState}, target url = ${url}`);
       if (currentState !== 'idle') {
         await this.player.reset();
-        // reset 完成后等待状态回到 idle
         hilog.info(0x0000, TAG, `load: reset done, now setting url`);
       }
+
+      // 启动超时保护：15 秒内若未进入 playing 则报错
+      this.clearLoadTimeout();
+      this.loadTimeoutId = setTimeout(() => {
+        if (this.state === 'loading') {
+          hilog.error(0x0000, TAG, `load timeout: no stateChange after 15s, url may be unreachable`);
+          this.callbacks.onError?.('加载超时，请检查网络或更换电台');
+          this.setState('error');
+          // 尝试 reset 回 idle
+          this.player?.reset().catch(() => {});
+        }
+      }, 15000);
+
       this.player.url = url;
-      hilog.info(0x0000, TAG, `load: url has been set`);
+      hilog.info(0x0000, TAG, `load: url has been set, waiting for initialized callback...`);
     } catch (e) {
       const err = e as Error;
       hilog.error(0x0000, TAG, `load failed: ${JSON.stringify(err)}`);
       this.callbacks.onError?.(err.message);
       this.setState('error');
+      this.clearLoadTimeout();
+    }
+  }
+
+  private clearLoadTimeout(): void {
+    if (this.loadTimeoutId >= 0) {
+      clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = -1;
     }
   }
 
