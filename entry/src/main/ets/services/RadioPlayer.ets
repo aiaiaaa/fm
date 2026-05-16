@@ -62,10 +62,13 @@ export class RadioPlayer {
     const p = this.player;
 
     p.on('stateChange', (state: string, _reason: media.StateChangeReason) => {
-      hilog.info(0x0000, TAG, `AVPlayer state: ${state}`);
+      hilog.info(0x0000, TAG, `AVPlayer state: ${state}, internal state: ${this.state}`);
       switch (state) {
         case 'idle':
-          this.setState('idle');
+          // 如果正处于 loading 状态（reset 后准备设置 url），不要覆盖为 idle
+          if (this.state !== 'loading') {
+            this.setState('idle');
+          }
           break;
         case 'initialized':
           p.audioRendererInfo = {
@@ -180,13 +183,17 @@ export class RadioPlayer {
     try {
       this.currentUrl = url;
       this.setState('loading');
-      // AVPlayer 必须在 idle 状态才能设置 url，总是先尝试 reset
-      try {
+      // AVPlayer 必须在 idle 状态才能设置 url
+      // 只有非 idle 状态才需要 reset；idle 状态直接设置 url 即可
+      const currentState = this.player.state;
+      hilog.info(0x0000, TAG, `load: current AVPlayer state = ${currentState}, target url = ${url}`);
+      if (currentState !== 'idle') {
         await this.player.reset();
-      } catch (_e) {
-        // 首次 create 后已是 idle，reset 可能报错，忽略即可
+        // reset 完成后等待状态回到 idle
+        hilog.info(0x0000, TAG, `load: reset done, now setting url`);
       }
       this.player.url = url;
+      hilog.info(0x0000, TAG, `load: url has been set`);
     } catch (e) {
       const err = e as Error;
       hilog.error(0x0000, TAG, `load failed: ${JSON.stringify(err)}`);
