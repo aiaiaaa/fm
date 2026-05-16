@@ -1,12 +1,15 @@
 import { window } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { RadioPlayer, PlayerState } from '../services/RadioPlayer';
 import { BackgroundTask } from '../services/BackgroundTask';
 import { ListeningStats } from '../services/ListeningStats';
 import { MODES, ModeId, ModeConfig } from '../model/Modes';
 import { MeteorField } from '../components/MeteorField';
 import { WaveVisualizer } from '../components/WaveVisualizer';
+
+const PAGE_TAG = 'PlayerPage';
 
 interface StarDot {
   x: number;
@@ -76,6 +79,7 @@ export struct PlayerPage {
     ListeningStats.init(context);
     this.player.init(context, {
       onStateChange: (s: PlayerState) => {
+        hilog.info(0x0000, PAGE_TAG, `onStateChange: ${s}`);
         switch (s) {
           case 'loading':
             this.isLoading = true;
@@ -177,8 +181,10 @@ export struct PlayerPage {
   }
 
   private async togglePlay(): Promise<void> {
+    hilog.info(0x0000, PAGE_TAG, `togglePlay: isLoading=${this.isLoading}, isPlaying=${this.isPlaying}, mode=${this.mode}, lang=${this.lang}`);
     if (this.isLoading) return;
     if (this.isPlaying) {
+      hilog.info(0x0000, PAGE_TAG, `togglePlay: calling pause`);
       await this.player.pause();
       return;
     }
@@ -190,9 +196,12 @@ export struct PlayerPage {
     });
     // 若已加载同一路但为暂停 → 直接 play；否则 load 新流
     if (this.player.getState() === 'paused') {
+      hilog.info(0x0000, PAGE_TAG, `togglePlay: resuming from paused`);
       await this.player.play();
     } else {
-      await this.player.load(this.currentUrl());
+      const url = this.currentUrl();
+      hilog.info(0x0000, PAGE_TAG, `togglePlay: loading new url = ${url}`);
+      await this.player.load(url);
     }
   }
 
