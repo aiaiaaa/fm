@@ -91,16 +91,24 @@ export class RadioPlayer {
           }
           break;
         case 'initialized':
-          hilog.info(0x0000, TAG, `[stateChange] initialized -> setting audioRendererInfo then prepare()`);
-          p.audioRendererInfo = {
-            usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
-            rendererFlags: 0
-          };
-          p.prepare().catch((e: Error) => {
-            hilog.error(0x0000, TAG, `prepare failed: ${JSON.stringify(e)}`);
-            this.clearLoadTimeout();
-            this.callbacks.onError?.(e.message);
-            this.setState('error');
+          hilog.info(0x0000, TAG, `[stateChange] initialized -> waiting microtask then set audioRendererInfo + prepare()`);
+          // 使用微任务延迟确保 AVPlayer 内部状态完全切换到 initialized
+          Promise.resolve().then(() => {
+            hilog.info(0x0000, TAG, `[initialized] now setting audioRendererInfo, player.state = ${p.state}`);
+            try {
+              p.audioRendererInfo = {
+                usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+                rendererFlags: 0
+              };
+            } catch (e) {
+              hilog.error(0x0000, TAG, `set audioRendererInfo failed: ${JSON.stringify(e)}, skipping...`);
+            }
+            p.prepare().catch((e: Error) => {
+              hilog.error(0x0000, TAG, `prepare failed: ${JSON.stringify(e)}`);
+              this.clearLoadTimeout();
+              this.callbacks.onError?.(e.message);
+              this.setState('error');
+            });
           });
           break;
         case 'prepared':
