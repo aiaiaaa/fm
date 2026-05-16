@@ -432,8 +432,8 @@ export struct PlayerPage {
           WaveVisualizer({
             active: this.isPlaying,
             accent: cfg.accent,
-            bars: 32,
-            maxHeight: 38
+            bars: 16,
+            maxHeight: 44
           })
         }
         .width('100%')

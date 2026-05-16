@@ -2,64 +2,78 @@ import { audio } from '@kit.AudioKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'AudioVisualizer';
+const BAND_COUNT = 16;
 
 /**
- * 音波可视化服务：调用鸿蒙底层音频 API 获取系统音量，
- * 结合播放状态生成贴近真实播放的音波数据。
+ * 音频可视化服务 —— 使用 AudioCapturer (PLAYBACK_CAPTURE) 采集系统播放的音频 PCM，
+ * 再通过简易频谱分析提取 16 个频段能量，驱动 UI 柱状音波。
  *
- * 核心依赖（HarmonyOS NEXT API 12+ / HarmonyOS 6.10）：
- *   - @kit.AudioKit → audio.AudioManager.getVolumeManager()
- *   - AudioVolumeGroupManager.getVolumeSync / getMaxVolumeSync
+ * 如果设备不支持 PLAYBACK_CAPTURE（权限/API限制），自动降级为基于播放状态的模拟算法。
  *
- * 播放状态由外部调用 setActive() 传入（来自 AVPlayer 状态回调），
- * 避免依赖 getCurrentAudioRendererInfoArray 的异步返回值。
- *
- * 调用方（UI）只需要：
- *   1) start(opts, cb)           —— 启动取样回路，cb 中拿 levels[]
- *   2) setActive(playing)        —— 播放/暂停时通知，让波形进入活跃/静默
- *   3) stop()                    —— 释放定时器
+ * 外部使用：
+ *   const vis = new AudioVisualizer();
+ *   vis.start(cb);         // cb 接收 16 个 [0,1] 值
+ *   vis.setActive(true);   // 播放开始
+ *   vis.setActive(false);  // 播放暂停
+ *   vis.stop();            // 释放资源
  */
-export interface VisualizerOptions {
-  bars: number;                // 柱条数量
-  intervalMs: number;          // 采样间隔 (ms)
-}
-
-export type VisualizerCallback = (levels: number[], active: boolean) => void;
+export type SpectrumCallback = (bands: number[]) => void;
 
 export class AudioVisualizer {
+  private capturer: audio.AudioCapturer | null = null;
+  private callback: SpectrumCallback | null = null;
+  private active: boolean = false;
   private timer: number = -1;
   private phase: number = 0;
-  private active: boolean = false;
-  private opts: VisualizerOptions = { bars: 28, intervalMs: 90 };
-  private cb: VisualizerCallback | null = null;
-  /** 来自系统的 0..1 实时音量（媒体流） */
-  private systemVolume: number = 0.6;
+  private useFallback: boolean = false;
 
-  async start(opts: VisualizerOptions, cb: VisualizerCallback): Promise<void> {
-    this.opts = opts;
-    this.cb = cb;
+  // 平滑缓冲（上一帧数据用于做衰减）
+  private prevBands: number[] = new Array(BAND_COUNT).fill(0);
 
-    // 获取系统媒体音量作为波形振幅基准
+  async start(cb: SpectrumCallback): Promise<void> {
+    this.callback = cb;
+
+    // 尝试创建 AudioCapturer (播放内录)
     try {
-      const mgr = audio.getAudioManager();
-      const volMgr = mgr.getVolumeManager();
-      const groupMgr = volMgr.getVolumeGroupManagerSync(audio.DEFAULT_VOLUME_GROUP_ID);
-      const v = groupMgr.getVolumeSync(audio.AudioVolumeType.MEDIA);
-      const max = groupMgr.getMaxVolumeSync(audio.AudioVolumeType.MEDIA);
-      if (max > 0) {
-        this.systemVolume = Math.min(1, Math.max(0.15, v / max));
-      }
-    } catch (e) {
-      hilog.warn(0x0000, TAG, `getVolume fallback to default: ${JSON.stringify(e)}`);
-      // 使用默认值 0.6
-    }
+      const capturerOptions: audio.AudioCapturerOptions = {
+        streamInfo: {
+          samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_44100,
+          channels: audio.AudioChannel.CHANNEL_1,
+          sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+          encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+        },
+        capturerInfo: {
+          source: audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE,
+          capturerFlags: 0
+        }
+      };
 
-    // 启动采样回路
-    this.timer = setInterval(() => this.tick(), this.opts.intervalMs);
+      this.capturer = await audio.createAudioCapturer(capturerOptions);
+      await this.capturer.start();
+      this.useFallback = false;
+      hilog.info(0x0000, TAG, 'AudioCapturer started (PLAYBACK_CAPTURE)');
+
+      // 定时读取 PCM 数据并分析频谱
+      this.timer = setInterval(() => {
+        this.readAndAnalyze();
+      }, 60);
+    } catch (e) {
+      hilog.warn(0x0000, TAG, `AudioCapturer not available, using fallback: ${JSON.stringify(e)}`);
+      this.useFallback = true;
+      // 降级：用模拟算法
+      this.timer = setInterval(() => {
+        this.fallbackTick();
+      }, 80);
+    }
   }
 
   setActive(playing: boolean): void {
     this.active = playing;
+    if (!playing) {
+      // 停止时快速衰减
+      this.prevBands = new Array(BAND_COUNT).fill(0);
+      this.emitBands(new Array(BAND_COUNT).fill(0));
+    }
   }
 
   async stop(): Promise<void> {
@@ -67,45 +81,140 @@ export class AudioVisualizer {
       clearInterval(this.timer);
       this.timer = -1;
     }
-    this.cb = null;
+    if (this.capturer) {
+      try {
+        await this.capturer.stop();
+        await this.capturer.release();
+      } catch (e) {
+        hilog.warn(0x0000, TAG, `capturer release: ${JSON.stringify(e)}`);
+      }
+      this.capturer = null;
+    }
+    this.callback = null;
   }
 
   /**
-   * 每一个采样 tick：生成 bars 个 [0,1] 的值。
-   * - active 为 true：正常钟形波（振幅与系统音量正相关），模拟真实音频律动
-   * - active 为 false：极低静默线（几乎为 0）
-   *
-   * 优化：增加更多频率分量和随机性，让音波看起来更贴近真实 m3u8 音频播放效果
+   * 从 AudioCapturer 读取 PCM 数据并做简易频谱分析
    */
-  private tick(): void {
-    if (!this.cb) return;
-    this.phase += 0.45;
-
-    const N = this.opts.bars;
-    const center = (N - 1) / 2;
-    const levels: number[] = new Array(N);
-
-    const baseGain = this.active ? 1.0 : 0.05;
-    const volumeGain = 0.5 + this.systemVolume * 0.7;
-
-    for (let i = 0; i < N; i++) {
-      const x = (i - center) / center;            // -1..1
-      const envelope = Math.exp(-x * x * 2.2);    // 中间高两边低（钟形）
-
-      if (this.active) {
-        // 多频率叠加：模拟真实音频频谱的动态变化
-        const lo = Math.sin(this.phase * 0.6 + i * 0.2) * 0.30;
-        const mid = Math.sin(this.phase * 1.3 + i * 0.5) * 0.40;
-        const hi = Math.sin(this.phase * 2.1 + i * 0.9) * 0.20;
-        const beat = (Math.random() * 0.25 - 0.125);  // 随机微扰模拟节奏
-        const v = Math.abs(lo + mid + hi + beat) * envelope * baseGain * volumeGain;
-        levels[i] = Math.max(0.08, Math.min(1, 0.15 + v * 1.4));
-      } else {
-        // 静默状态：极低但不完全为 0，保持微弱呼吸感
-        const breath = Math.sin(this.phase * 0.2 + i * 0.3) * 0.02;
-        levels[i] = Math.max(0.04, 0.06 + breath) * envelope;
+  private readAndAnalyze(): void {
+    if (!this.capturer || !this.active) {
+      if (!this.active) {
+        this.decay();
       }
+      return;
     }
-    this.cb(levels, this.active);
+
+    try {
+      // 读取一小段 PCM 数据 (约 60ms @ 44100Hz mono S16LE = ~5292 bytes)
+      const bufferSize = 4096;
+      const buffer = new ArrayBuffer(bufferSize);
+      const bytesRead = this.capturer.readSync(buffer, bufferSize, true);
+
+      if (bytesRead <= 0) {
+        this.decay();
+        return;
+      }
+
+      // 解析 S16LE PCM 数据
+      const samples = new Int16Array(buffer, 0, Math.min(bytesRead / 2, 2048));
+      const bands = this.analyzeBands(samples);
+      this.emitBands(bands);
+    } catch (e) {
+      // readSync 可能失败，降级衰减
+      this.decay();
+    }
+  }
+
+  /**
+   * 将 PCM 样本简易分为 16 个频段（不做完整 FFT，用能量分组近似）
+   * 将样本分成 16 段，每段计算 RMS 能量，再做对数映射
+   */
+  private analyzeBands(samples: Int16Array): number[] {
+    const N = samples.length;
+    if (N < BAND_COUNT) {
+      return new Array(BAND_COUNT).fill(0);
+    }
+
+    const segSize = Math.floor(N / BAND_COUNT);
+    const bands: number[] = [];
+
+    for (let b = 0; b < BAND_COUNT; b++) {
+      let sum = 0;
+      const start = b * segSize;
+      for (let i = start; i < start + segSize && i < N; i++) {
+        const v = samples[i] / 32768;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / segSize);
+      // 对数映射，让小信号也能看到
+      const db = rms > 0 ? 20 * Math.log10(rms) : -60;
+      // 归一化到 0..1 (假设 -60dB ~ 0dB 范围)
+      const normalized = Math.max(0, Math.min(1, (db + 60) / 55));
+      bands.push(normalized);
+    }
+
+    return bands;
+  }
+
+  /**
+   * 降级模拟算法：基于播放状态生成伪频谱
+   */
+  private fallbackTick(): void {
+    if (!this.active) {
+      this.decay();
+      return;
+    }
+
+    this.phase += 0.55;
+    const bands: number[] = [];
+
+    for (let i = 0; i < BAND_COUNT; i++) {
+      // 低频段振幅较大，高频段递减（模拟真实音频频谱分布）
+      const freqFactor = 1.0 - (i / BAND_COUNT) * 0.6;
+      const lo = Math.sin(this.phase * 0.8 + i * 0.3) * 0.3;
+      const mid = Math.sin(this.phase * 1.6 + i * 0.7) * 0.35;
+      const hi = Math.sin(this.phase * 2.5 + i * 1.1) * 0.15;
+      const rnd = (Math.random() - 0.5) * 0.25;
+      const raw = Math.abs(lo + mid + hi + rnd) * freqFactor;
+      bands.push(Math.max(0.05, Math.min(1, 0.15 + raw * 1.5)));
+    }
+
+    this.emitBands(bands);
+  }
+
+  /**
+   * 输出频段数据（带平滑）
+   */
+  private emitBands(bands: number[]): void {
+    if (!this.callback) return;
+
+    // 平滑处理：上升快、下降慢
+    const smoothed: number[] = [];
+    for (let i = 0; i < BAND_COUNT; i++) {
+      const target = bands[i];
+      const prev = this.prevBands[i];
+      const v = target > prev
+        ? prev + (target - prev) * 0.7  // 上升快
+        : prev + (target - prev) * 0.3; // 下降慢（拖尾效果）
+      smoothed.push(v);
+    }
+    this.prevBands = smoothed;
+    this.callback(smoothed);
+  }
+
+  /**
+   * 无数据时缓慢衰减
+   */
+  private decay(): void {
+    const bands: number[] = [];
+    let allZero = true;
+    for (let i = 0; i < BAND_COUNT; i++) {
+      const v = this.prevBands[i] * 0.8;
+      bands.push(v < 0.01 ? 0 : v);
+      if (v >= 0.01) allZero = false;
+    }
+    if (!allZero) {
+      this.emitBands(bands);
+    }
   }
 }

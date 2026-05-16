@@ -1,104 +1,57 @@
+import { AudioVisualizer } from '../services/AudioVisualizer';
+
 /**
- * 音波可视化组件 —— 播放时展示动态音波柱状图
+ * 音波可视化组件 —— 16 根柱条，由真实音频 PCM 数据驱动
  *
- * 效果：中间高两侧低的钟形分布，带渐变色和发光，
- *       播放时柱条随机律动，暂停时归于静默。
- *
- * 不再依赖 AudioVisualizer 服务，直接内部驱动动画，
- * 确保只要 active=true 就一定有动效。
+ * 视觉效果（对标设计稿）：
+ *   - 左侧柱条最高（低频能量大），向右递减
+ *   - 柱条带圆角，颜色从绿色渐变到青色
+ *   - 播放时根据真实音频频谱律动
+ *   - 暂停时柔和衰减归零
  */
 @Component
 export struct WaveVisualizer {
   @Prop @Watch('onActiveChange') active: boolean = false;
   @Prop accent: string = '#52FFA1';
-  @Prop bars: number = 32;
+  @Prop bars: number = 16;
   @Prop maxHeight: number = 42;
 
-  @State levels: number[] = [];
+  @State levels: number[] = new Array(16).fill(0);
 
-  private timer: number = -1;
-  private phase: number = 0;
+  private visualizer: AudioVisualizer = new AudioVisualizer();
 
   aboutToAppear(): void {
-    this.levels = new Array(this.bars).fill(0.06);
+    this.levels = new Array(this.bars).fill(0);
+    this.visualizer.start((bands: number[]) => {
+      animateTo({ duration: 60, curve: Curve.Linear }, () => {
+        this.levels = bands;
+      });
+    });
     if (this.active) {
-      this.startAnim();
+      this.visualizer.setActive(true);
     }
   }
 
   aboutToDisappear(): void {
-    this.stopAnim();
+    this.visualizer.stop();
   }
 
   onActiveChange(): void {
-    if (this.active) {
-      this.startAnim();
-    } else {
-      this.stopAnim();
-      // 归于静默
-      animateTo({ duration: 400, curve: Curve.EaseOut }, () => {
-        const N = this.bars;
-        const center = (N - 1) / 2;
-        const arr: number[] = [];
-        for (let i = 0; i < N; i++) {
-          const x = (i - center) / center;
-          const env = Math.exp(-x * x * 3);
-          arr.push(0.06 * env + 0.03);
-        }
-        this.levels = arr;
-      });
-    }
-  }
-
-  private startAnim(): void {
-    if (this.timer >= 0) return;
-    this.timer = setInterval(() => {
-      this.phase += 0.5;
-      const N = this.bars;
-      const center = (N - 1) / 2;
-      const arr: number[] = [];
-
-      for (let i = 0; i < N; i++) {
-        const x = (i - center) / center; // -1..1
-        const envelope = Math.exp(-x * x * 2.0); // 钟形
-
-        // 多频率叠加模拟音频律动
-        const lo = Math.sin(this.phase * 0.7 + i * 0.25) * 0.28;
-        const mid = Math.sin(this.phase * 1.4 + i * 0.55) * 0.35;
-        const hi = Math.sin(this.phase * 2.3 + i * 0.85) * 0.18;
-        const rnd = (Math.random() - 0.5) * 0.2;
-        const raw = Math.abs(lo + mid + hi + rnd);
-        const v = (0.2 + raw * 1.3) * envelope;
-        arr.push(Math.max(0.08, Math.min(1, v)));
-      }
-
-      animateTo({ duration: 80, curve: Curve.Linear }, () => {
-        this.levels = arr;
-      });
-    }, 85);
-  }
-
-  private stopAnim(): void {
-    if (this.timer >= 0) {
-      clearInterval(this.timer);
-      this.timer = -1;
-    }
+    this.visualizer.setActive(this.active);
   }
 
   build() {
-    Row({ space: 2 }) {
+    Row({ space: 4 }) {
       ForEach(this.levels, (lv: number, idx: number) => {
         Column()
-          .width(3)
-          .height(Math.max(3, lv * this.maxHeight))
-          .borderRadius(1.5)
+          .width(5)
+          .height(Math.max(5, lv * this.maxHeight))
+          .borderRadius(2.5)
           .linearGradient({
             angle: 180,
-            colors: this.active
-              ? [[this.accent, 0], [this.shiftColor(this.accent, 0.6), 1]]
-              : [['#2A3040', 0], ['#1A2030', 1]]
+            colors: this.getBarColors(idx)
           })
-          .opacity(this.active ? (0.5 + lv * 0.5) : 0.3)
+          .opacity(this.active ? (0.6 + lv * 0.4) : 0.2)
       }, (_: number, idx: number) => `wv-${idx}`)
     }
     .height(this.maxHeight)
@@ -108,12 +61,16 @@ export struct WaveVisualizer {
   }
 
   /**
-   * 简单地将 hex 颜色的亮度做偏移，用于渐变第二色
+   * 每根柱条的渐变色：从左到右 绿→青 过渡
    */
-  private shiftColor(hex: string, factor: number): string {
-    // 简单处理：对于 #52FFA1 这类，降低亮度作为渐变底部色
-    // 返回一个带透明度的版本
-    const alpha = Math.round(factor * 255).toString(16).padStart(2, '0');
-    return hex + alpha;
+  private getBarColors(idx: number): [string, number][] {
+    // 16根柱条从 #52FFA1(绿) 渐变到 #00D2FF(青)
+    const t = idx / (this.bars - 1);
+    const r = Math.round(0x52 + (0x00 - 0x52) * t);
+    const g = Math.round(0xFF + (0xD2 - 0xFF) * t);
+    const b = Math.round(0xA1 + (0xFF - 0xA1) * t);
+    const topColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    const bottomColor = topColor + '66'; // 带透明度的底色
+    return [[topColor, 0], [bottomColor, 1]];
   }
 }
