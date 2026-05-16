@@ -26,6 +26,7 @@ export class AudioVisualizer {
   private timer: number = -1;
   private phase: number = 0;
   private useFallback: boolean = false;
+  private reading: boolean = false;
 
   // 平滑缓冲（上一帧数据用于做衰减）
   private prevBands: number[] = new Array(BAND_COUNT).fill(0);
@@ -104,25 +105,27 @@ export class AudioVisualizer {
       return;
     }
 
-    try {
-      // 读取一小段 PCM 数据 (约 60ms @ 44100Hz mono S16LE = ~5292 bytes)
-      const bufferSize = 4096;
-      const buffer = new ArrayBuffer(bufferSize);
-      const bytesRead = this.capturer.readSync(buffer, bufferSize, true);
+    // 防止重入（上一次 read 还没完成）
+    if (this.reading) return;
+    this.reading = true;
 
-      if (bytesRead <= 0) {
+    const bufferSize = 4096;
+    this.capturer.read(bufferSize, true).then((buffer: ArrayBuffer) => {
+      this.reading = false;
+      if (buffer.byteLength <= 0) {
         this.decay();
         return;
       }
 
       // 解析 S16LE PCM 数据
-      const samples = new Int16Array(buffer, 0, Math.min(bytesRead / 2, 2048));
+      const sampleCount = Math.min(Math.floor(buffer.byteLength / 2), 2048);
+      const samples = new Int16Array(buffer, 0, sampleCount);
       const bands = this.analyzeBands(samples);
       this.emitBands(bands);
-    } catch (e) {
-      // readSync 可能失败，降级衰减
+    }).catch(() => {
+      this.reading = false;
       this.decay();
-    }
+    });
   }
 
   /**
