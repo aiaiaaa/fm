@@ -1,14 +1,11 @@
-import { AudioVisualizer } from '../services/AudioVisualizer';
-
 /**
- * 音波可视化组件（柱状）—— 图片中的绿色钟形条形图。
+ * 音波可视化组件 —— 播放时展示动态音波柱状图
  *
- * 底层数据源：AudioVisualizer
- *   - 订阅鸿蒙 AudioStreamManager.audioRendererChange 感知是否真在放音
- *   - 订阅 AudioVolumeGroupManager.volumeChange 感知媒体音量
- *   - 合成出 bars 根柱子的 [0,1] 振幅
+ * 效果：中间高两侧低的钟形分布，带渐变色和发光，
+ *       播放时柱条随机律动，暂停时归于静默。
  *
- * 样式与图片保持一致：中间最高，两边递减，圆角条。
+ * 不再依赖 AudioVisualizer 服务，直接内部驱动动画，
+ * 确保只要 active=true 就一定有动效。
  */
 @Component
 export struct WaveVisualizer {
@@ -18,48 +15,105 @@ export struct WaveVisualizer {
   @Prop maxHeight: number = 42;
 
   @State levels: number[] = [];
-  @State renderingActive: boolean = false;
 
-  private visualizer: AudioVisualizer = new AudioVisualizer();
+  private timer: number = -1;
+  private phase: number = 0;
 
   aboutToAppear(): void {
-    this.levels = new Array(this.bars).fill(0.04);
-    this.visualizer.start({ bars: this.bars, intervalMs: 90 }, (levels: number[], realActive: boolean) => {
-      animateTo({ duration: 90, curve: Curve.Linear }, () => {
-        this.levels = levels;
-        this.renderingActive = realActive;
-      });
-    });
-    this.visualizer.setActive(this.active);
+    this.levels = new Array(this.bars).fill(0.06);
+    if (this.active) {
+      this.startAnim();
+    }
   }
 
   aboutToDisappear(): void {
-    this.visualizer.stop();
+    this.stopAnim();
   }
 
-  /**
-   * 当外部 active 属性变化时同步给底层可视化器
-   */
   onActiveChange(): void {
-    this.visualizer.setActive(this.active);
+    if (this.active) {
+      this.startAnim();
+    } else {
+      this.stopAnim();
+      // 归于静默
+      animateTo({ duration: 400, curve: Curve.EaseOut }, () => {
+        const N = this.bars;
+        const center = (N - 1) / 2;
+        const arr: number[] = [];
+        for (let i = 0; i < N; i++) {
+          const x = (i - center) / center;
+          const env = Math.exp(-x * x * 3);
+          arr.push(0.06 * env + 0.03);
+        }
+        this.levels = arr;
+      });
+    }
+  }
+
+  private startAnim(): void {
+    if (this.timer >= 0) return;
+    this.timer = setInterval(() => {
+      this.phase += 0.5;
+      const N = this.bars;
+      const center = (N - 1) / 2;
+      const arr: number[] = [];
+
+      for (let i = 0; i < N; i++) {
+        const x = (i - center) / center; // -1..1
+        const envelope = Math.exp(-x * x * 2.0); // 钟形
+
+        // 多频率叠加模拟音频律动
+        const lo = Math.sin(this.phase * 0.7 + i * 0.25) * 0.28;
+        const mid = Math.sin(this.phase * 1.4 + i * 0.55) * 0.35;
+        const hi = Math.sin(this.phase * 2.3 + i * 0.85) * 0.18;
+        const rnd = (Math.random() - 0.5) * 0.2;
+        const raw = Math.abs(lo + mid + hi + rnd);
+        const v = (0.2 + raw * 1.3) * envelope;
+        arr.push(Math.max(0.08, Math.min(1, v)));
+      }
+
+      animateTo({ duration: 80, curve: Curve.Linear }, () => {
+        this.levels = arr;
+      });
+    }, 85);
+  }
+
+  private stopAnim(): void {
+    if (this.timer >= 0) {
+      clearInterval(this.timer);
+      this.timer = -1;
+    }
   }
 
   build() {
-    Row({ space: 3 }) {
+    Row({ space: 2 }) {
       ForEach(this.levels, (lv: number, idx: number) => {
         Column()
           .width(3)
-          .height(Math.max(4, lv * this.maxHeight))
-          .borderRadius(2)
-          .backgroundColor(this.accent)
-          .opacity(0.55 + lv * 0.45)
-          .shadow(this.renderingActive ? { radius: 6, color: this.accent, offsetX: 0, offsetY: 0 } : { radius: 0, color: '#00000000', offsetX: 0, offsetY: 0 })
+          .height(Math.max(3, lv * this.maxHeight))
+          .borderRadius(1.5)
+          .linearGradient({
+            angle: 180,
+            colors: this.active
+              ? [[this.accent, 0], [this.shiftColor(this.accent, 0.6), 1]]
+              : [['#2A3040', 0], ['#1A2030', 1]]
+          })
+          .opacity(this.active ? (0.5 + lv * 0.5) : 0.3)
       }, (_: number, idx: number) => `wv-${idx}`)
     }
     .height(this.maxHeight)
     .width('100%')
     .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .onAppear(() => this.onActiveChange())
+    .alignItems(VerticalAlign.Bottom)
+  }
+
+  /**
+   * 简单地将 hex 颜色的亮度做偏移，用于渐变第二色
+   */
+  private shiftColor(hex: string, factor: number): string {
+    // 简单处理：对于 #52FFA1 这类，降低亮度作为渐变底部色
+    // 返回一个带透明度的版本
+    const alpha = Math.round(factor * 255).toString(16).padStart(2, '0');
+    return hex + alpha;
   }
 }
