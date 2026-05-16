@@ -91,7 +91,11 @@ export class RadioPlayer {
           }
           break;
         case 'initialized':
-          hilog.info(0x0000, TAG, `[stateChange] initialized -> calling prepare()`);
+          hilog.info(0x0000, TAG, `[stateChange] initialized -> setting audioRendererInfo then prepare()`);
+          p.audioRendererInfo = {
+            usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+            rendererFlags: 0
+          };
           p.prepare().catch((e: Error) => {
             hilog.error(0x0000, TAG, `prepare failed: ${JSON.stringify(e)}`);
             this.clearLoadTimeout();
@@ -210,13 +214,7 @@ export class RadioPlayer {
       // 每次 load 都创建全新的 AVPlayer 实例
       const p = await this.createFreshPlayer();
 
-      hilog.info(0x0000, TAG, `load: fresh player state = ${p.state}, setting audioRendererInfo`);
-
-      // 在 idle 状态下先设置音频渲染参数
-      p.audioRendererInfo = {
-        usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
-        rendererFlags: 0
-      };
+      hilog.info(0x0000, TAG, `load: fresh player state = ${p.state}`);
 
       // 启动超时保护：20 秒
       this.clearLoadTimeout();
