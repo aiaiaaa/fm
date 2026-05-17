@@ -53,6 +53,10 @@ std::shared_ptr<Instance> FindInstance(uint32_t handle) {
     return it->second;
 }
 
+// Track stats so you can grep hilog and see what's actually going on
+std::atomic<uint32_t> g_adts_fed{0};
+std::atomic<uint32_t> g_bands_emitted{0};
+
 /**
  * Parse ADTS sampling rate + channel count from a frame header.
  *   sampling_frequency_index = bits 18..21 (0-indexed from MSB)
@@ -139,6 +143,14 @@ napi_value Create(napi_env env, napi_callback_info info) {
     // Analyzer emits std::vector<float>; we marshal to JS thread.
     napi_threadsafe_function tsfn = inst->tsfn;
     inst->analyzer = std::make_unique<xfm::SpectrumAnalyzer>([tsfn](const std::vector<float>& bands) {
+        uint32_t emitted = ++g_bands_emitted;
+        if (emitted == 1 || emitted == 10 || (emitted % 100) == 0) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "xfm_napi",
+                "bands emitted: total=%u (b0=%.2f b8=%.2f b15=%.2f)",
+                emitted, bands.empty() ? 0.0f : bands[0],
+                bands.size() > 8 ? bands[8] : 0.0f,
+                bands.size() > 15 ? bands[15] : 0.0f);
+        }
         auto* copy = new std::vector<float>(bands);
         napi_status status = napi_call_threadsafe_function(tsfn, copy, napi_tsfn_nonblocking);
         if (status != napi_ok) {
@@ -206,13 +218,19 @@ napi_value FeedAdts(napi_env env, napi_callback_info info) {
                 if (analyzer_ptr) analyzer_ptr->FeedPcm(samples, count, sr, ch);
             });
         if (!ok) {
-            LOGE("decoder init failed (handle=%u, sr=%d, ch=%d)", handle, hdr.sample_rate, hdr.channels);
+            LOGE("decoder init failed (handle=%u, sr=%d, ch=%d) -- check OH_AudioCodec_Configure log lines above",
+                 handle, hdr.sample_rate, hdr.channels);
             return nullptr;
         }
         inst->decoder_inited = true;
+        LOGI("decoder inited from first ADTS: sr=%d ch=%d", hdr.sample_rate, hdr.channels);
     }
 
     inst->decoder->FeedAdts(bytes, length);
+    uint32_t fed = ++g_adts_fed;
+    if (fed == 1 || fed == 10 || fed == 50 || (fed % 200) == 0) {
+        LOGI("feedAdts stats: total=%u (last frame=%zub)", fed, length);
+    }
     return nullptr;
 }
 

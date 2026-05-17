@@ -193,22 +193,20 @@ export class AudioVisualizer {
     }, 80);
   }
 
+  /**
+   * 降级显示：故意做成"一眼能看出是降级"的样子
+   *   - 全 16 根柱条等高、低位置
+   *   - 整体非常缓慢地呼吸（2.5s 一个周期），区别于任何真实音频
+   * 这样肉眼就知道真实管线没产出，需要看 hilog 排查。
+   */
   private fallbackTick(): void {
     if (!this.active) {
       this.decay();
       return;
     }
-    this.phase += 0.55;
-    const bands: number[] = [];
-    for (let i = 0; i < BAND_COUNT; i++) {
-      const freqFactor = 1.0 - (i / BAND_COUNT) * 0.6;
-      const lo = Math.sin(this.phase * 0.8 + i * 0.3) * 0.3;
-      const mid = Math.sin(this.phase * 1.6 + i * 0.7) * 0.35;
-      const hi = Math.sin(this.phase * 2.5 + i * 1.1) * 0.15;
-      const rnd = (Math.random() - 0.5) * 0.25;
-      const raw = Math.abs(lo + mid + hi + rnd) * freqFactor;
-      bands.push(Math.max(0.08, Math.min(1, 0.2 + raw * 1.5)));
-    }
+    this.phase += 0.04;
+    const breath = 0.06 + 0.04 * (Math.sin(this.phase) + 1) * 0.5; // 0.06..0.10
+    const bands: number[] = new Array<number>(BAND_COUNT).fill(breath);
     this.emitBands(bands);
   }
 

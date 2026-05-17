@@ -2,6 +2,7 @@
 #define XFM_AAC_DECODER_H
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <queue>
@@ -78,7 +79,11 @@ private:
     // Input queue: indices the codec has handed us; we fill them with ADTS bytes when caller feeds.
     std::queue<std::pair<uint32_t, OH_AVBuffer*>> free_input_buffers_;
 
-    // Output buffers waiting to be released back to codec
+    // Frames cached when no input slot is available yet (eg. during the brief
+    // startup window between OH_AudioCodec_Start() and the first
+    // OnInputBufferAvailable callback). Drained inside that callback.
+    std::deque<std::vector<uint8_t>> pending_input_;
+
     int64_t pts_us_ = 0;
 };
 

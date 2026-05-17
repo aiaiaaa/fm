@@ -100,8 +100,15 @@ void AacDecoder::FeedAdts(const uint8_t* data, size_t size) {
     {
         std::lock_guard<std::mutex> lock(mtx_);
         if (free_input_buffers_.empty()) {
-            // No input slot available; drop. ADTS frames are 23ms each, occasional drops are fine
-            // for visualization (we can't pre-buffer indefinitely without bloating memory).
+            // Input slot not yet ready (codec hasn't dispatched OnInputBufferAvailable).
+            // Cache up to 32 frames so we don't lose the very first batch — losing them
+            // means no output ever fires and the upper layer falls back to fake bars.
+            if (pending_input_.size() < 32) {
+                pending_input_.emplace_back(data, data + size);
+            } else {
+                pending_input_.pop_front();
+                pending_input_.emplace_back(data, data + size);
+            }
             return;
         }
         auto front = free_input_buffers_.front();
@@ -145,6 +152,7 @@ void AacDecoder::Reset() {
         // The codec gives us fresh indices after flush, so drop stale ones.
         std::queue<std::pair<uint32_t, OH_AVBuffer*>> empty;
         std::swap(free_input_buffers_, empty);
+        pending_input_.clear();
     }
     pts_us_ = 0;
     OH_AudioCodec_Start(codec_);
@@ -162,10 +170,40 @@ void AacDecoder::Release() {
         std::lock_guard<std::mutex> lock(mtx_);
         std::queue<std::pair<uint32_t, OH_AVBuffer*>> empty;
         std::swap(free_input_buffers_, empty);
+        pending_input_.clear();
     }
 }
 
 void AacDecoder::OnInputBufferAvailable(uint32_t index, OH_AVBuffer* buffer) {
+    // If we cached frames during init, push the oldest one into this slot now.
+    std::vector<uint8_t> pending_frame;
+    bool used = false;
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (!pending_input_.empty()) {
+            pending_frame = std::move(pending_input_.front());
+            pending_input_.pop_front();
+            used = true;
+        }
+    }
+    if (used && buffer != nullptr) {
+        uint8_t* addr = OH_AVBuffer_GetAddr(buffer);
+        int32_t cap = OH_AVBuffer_GetCapacity(buffer);
+        if (addr != nullptr && cap > 0 && static_cast<int32_t>(pending_frame.size()) <= cap) {
+            std::memcpy(addr, pending_frame.data(), pending_frame.size());
+            OH_AVCodecBufferAttr attr{};
+            attr.size = static_cast<int32_t>(pending_frame.size());
+            attr.offset = 0;
+            attr.pts = pts_us_;
+            attr.flags = 0;
+            pts_us_ += static_cast<int64_t>(1024.0 * 1'000'000.0 / sample_rate_);
+            if (OH_AVBuffer_SetBufferAttr(buffer, &attr) == AV_ERR_OK) {
+                OH_AudioCodec_PushInputBuffer(codec_, index);
+                return;
+            }
+        }
+    }
+    // No pending or push failed: hand the slot back for the next FeedAdts call.
     std::lock_guard<std::mutex> lock(mtx_);
     free_input_buffers_.emplace(index, buffer);
 }
