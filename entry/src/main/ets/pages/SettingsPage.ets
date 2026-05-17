@@ -54,13 +54,25 @@ struct SettingsPage {
         Row() {
           // 内层容器宽度与下方列表卡片一致（88% 居中），这样图标的左边缘
           // 才会跟列表里"语言/屏幕常亮/版本号"文字开头精确对齐。
+          //
+          // 用 Shape+Path 画一个左箭头图标替代字体符号（< 或 ‹ 在不同字体里
+          // 视觉重心不一致，难以和文字基线精确对齐）。Shape 是按 viewport
+          // 像素绘制，能保证图标视觉中心严格居中。
           Row() {
-            Text('\u2039')
-              .fontSize(32)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-              .onClick(() => { router.back(); })
-              .padding({ right: 6 })
+            Shape() {
+              Path()
+                .commands('M 14 4 L 6 12 L 14 20')
+                .stroke('#FFFFFF')
+                .strokeWidth(2.4)
+                .strokeLineCap(LineCapStyle.Round)
+                .strokeLineJoin(LineJoinStyle.Round)
+                .fillOpacity(0)
+            }
+            .viewPort({ x: 0, y: 0, width: 24, height: 24 })
+            .width(22)
+            .height(22)
+            .onClick(() => { router.back(); })
+            .margin({ right: 8 })
 
             Text('设置')
               .fontSize(18)
