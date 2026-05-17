@@ -194,10 +194,16 @@ export class HlsAacTap {
   }
 
   /**
-   * ADTS 帧入口：直接转给 sink（NDK 解码器）
+   * ADTS 帧入口：永远转给 sink。
+   *
+   * 之前这里有 `if (!this.active) return` 守卫，是个 bug：上层 AudioVisualizer
+   * 在 startRealPipeline 末尾会调 tap.setActive(this.active=false)，导致 NDK
+   * 永远收不到 ADTS。即使后面用户点播放、active 翻 true，前 8 秒的 ADTS 已经
+   * 被丢光，健康检查 8s 超时直接切到 fallback。
+   *
+   * 现在 active 不影响数据流，只在 UI 层控制 opacity（参见 WaveVisualizer）。
    */
   private onAdtsFrame(adts: Uint8Array): void {
-    if (!this.active) return;
     this.sink(adts);
   }
 

@@ -55,14 +55,16 @@
 
 namespace {
 
-// Pace bands out at ~30 fps so the UI animation looks smooth.
-// (1024 samples / 44.1kHz ≈ 23ms per AAC frame; 33ms is a tad slower so a
-// 5-second segment of decoded frames takes ~5 seconds to drain — exactly
-// matching playback. If the buffer ever runs dry we just hold the last
-// emitted bands; if it overflows we drop the oldest to keep latency
-// bounded to ~1 second.)
-constexpr int kPaceIntervalMs = 33;
-constexpr size_t kRingMax = 256; // ~8.5 seconds of bands at 30fps
+// Pace bands out at FFT-frame rate (1024 samples / 44.1kHz ≈ 23.2ms).
+// Each AAC frame produces exactly one bands frame in the analyzer, so a
+// 5-second segment of audio decodes to ~217 bands frames; emitting them
+// at 23ms each yields ~5 seconds of UI updates — exactly matching audio
+// playback time. If the pacer ever drains faster than decode (e.g. the
+// network stalls), we hold the last emitted frame so the UI doesn't
+// freeze visibly. If decode bursts faster, we cap the ring at 256
+// frames (~6s) and drop oldest, keeping latency bounded.
+constexpr int kPaceIntervalMs = 23;
+constexpr size_t kRingMax = 256;
 
 // One instance per ArkTS visualizer. Identified by a numeric handle.
 struct Instance {

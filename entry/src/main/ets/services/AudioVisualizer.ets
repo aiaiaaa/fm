@@ -64,15 +64,9 @@ export class AudioVisualizer {
   setActive(playing: boolean): void {
     this.active = playing;
     hilog.info(0x0000, TAG, `setActive: ${playing}`);
-    this.tap?.setActive(playing);
-    if (!playing) {
-      // 暂停时：复位 native 内部状态 + 柔和归零
-      if (this.nativeHandle !== 0) {
-        try { spectrum.reset(this.nativeHandle); } catch (_e) { /* ignore */ }
-      }
-      this.prevBands = new Array<number>(BAND_COUNT).fill(0);
-      this.emitBands(new Array<number>(BAND_COUNT).fill(0));
-    }
+    // 不再 reset native：让 ring 缓冲继续，下次 setActive(true) 时无延迟。
+    // 不再 emit 全 0：active 只是 UI 提示（WaveVisualizer 用它控制 opacity），
+    // 实际 bands 仍由 pacer 30+ fps 发出来；暂停状态下视觉上自然变暗。
   }
 
   async stop(): Promise<void> {
@@ -130,7 +124,9 @@ export class AudioVisualizer {
         hilog.warn(0x0000, TAG, 'HlsAacTap reported fatal, switching to fallback');
         this.switchToFallback();
       });
-      this.tap.setActive(this.active);
+      // 不再调 tap.setActive —— active 只用来控制 UI opacity，不影响数据流。
+      // 让 ADTS 从启动就一直流到 NDK，pacer 在 ring buffer 攒帧，用户点播放
+      // 时立即就有现成数据可显示。
       hilog.info(0x0000, TAG, `real pipeline started for ${this.streamUrl}`);
       hilog.warn(0x0000, TAG, `pipeline started, waiting for bands... handle=${this.nativeHandle}`);
     } catch (e) {
@@ -139,14 +135,15 @@ export class AudioVisualizer {
       return;
     }
 
-    // 健康检查：8 秒还没收到一帧就降级（直播第一段拉取 + TS 解封装通常 3~5 秒）
+    // 健康检查放宽到 12 秒：HLS 拉第一段（playlist + 2s+ segment 下载 + TS 解封装）
+    // 5 秒比较紧，慢网/CDN 冷启动下经常超时误降级。
     if (this.healthCheckTimer >= 0) clearTimeout(this.healthCheckTimer);
     this.healthCheckTimer = setTimeout(() => {
       if (!this.receivedRealFrame && !this.fallbackActive) {
-        hilog.warn(0x0000, TAG, 'no real frame in 8s, switching to fallback');
+        hilog.warn(0x0000, TAG, 'no real frame in 12s, switching to fallback');
         this.switchToFallback();
       }
-    }, 8000);
+    }, 12000);
   }
 
   private async restartRealPipeline(): Promise<void> {
