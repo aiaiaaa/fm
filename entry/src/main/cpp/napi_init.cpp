@@ -83,7 +83,6 @@ struct Instance {
     std::mutex ring_mtx;
     std::condition_variable ring_cv;
     std::deque<std::vector<float>> ring; // FIFO of band frames waiting to emit
-    std::vector<float> last_emitted;     // held when ring runs dry
     std::atomic<bool> pacer_run{false};
 };
 
@@ -173,14 +172,12 @@ void PacerLoop(std::shared_ptr<Instance> inst) {
             if (!inst->ring.empty()) {
                 frame = std::move(inst->ring.front());
                 inst->ring.pop_front();
-                inst->last_emitted = frame;
-            } else if (!inst->last_emitted.empty()) {
-                // Buffer underrun: re-emit last frame so the UI doesn't
-                // freeze visibly. This typically only happens at startup
-                // before the first segment is decoded.
-                frame = inst->last_emitted;
             } else {
-                // No data at all yet; skip this tick.
+                // Underrun: skip the tick — do NOT re-emit a stale frame.
+                // Re-emission produced a stutter pattern (frame, frame,
+                // frame, NEW, frame, frame, NEW, ...) that looked like
+                // jitter; skipping ticks lets the UI hold steady on
+                // whatever it last had until fresh data arrives.
                 std::this_thread::sleep_until(next_tick);
                 continue;
             }
@@ -369,7 +366,6 @@ napi_value Reset(napi_env env, napi_callback_info info) {
     {
         std::lock_guard<std::mutex> lk(inst->ring_mtx);
         inst->ring.clear();
-        inst->last_emitted.clear();
     }
     return nullptr;
 }

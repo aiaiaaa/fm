@@ -26,10 +26,14 @@ export struct WaveVisualizer {
     if (this.streamUrl) {
       this.visualizer.attachStream(this.streamUrl);
     }
-    // 直接赋值，不用 animateTo —— native pacer 已经按 23ms 节拍发帧 +
-    // 内部做了 attack/release 平滑，再叠 ArkUI 动画反而会"糊"。
+    // native pacer 在 ring 空时会跳过 tick（不再重发 stale frame），
+    // 所以 UI 这边收到的是"有数据时的连续帧 + 偶尔的间隔"。给 ArkUI
+    // 一个短动画用来在帧间补间，比直接赋值看起来自然得多；曲线选
+    // EaseOut 让上升快、收尾柔和，比 Linear 视觉上更有"弹性"。
     this.visualizer.start((bands: number[]) => {
-      this.levels = bands;
+      animateTo({ duration: 80, curve: Curve.EaseOut }, () => {
+        this.levels = bands;
+      });
     });
     if (this.active) {
       this.visualizer.setActive(true);

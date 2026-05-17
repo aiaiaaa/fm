@@ -37,6 +37,9 @@ export class AudioVisualizer {
   private phase: number = 0;
   private prevBands: number[] = new Array<number>(BAND_COUNT).fill(0);
 
+  // active=false 时把 UI 衰减到 0 用的状态：1.0=刚暂停，逐步降到 0=完全静止
+  private idlePhase: number = 1.0;
+
   /**
    * 设置当前要可视化的流 URL（m3u8）。在 start 之前或之后调用都行。
    */
@@ -62,11 +65,13 @@ export class AudioVisualizer {
   }
 
   setActive(playing: boolean): void {
+    const wasPlaying = this.active;
     this.active = playing;
     hilog.info(0x0000, TAG, `setActive: ${playing}`);
-    // 不再 reset native：让 ring 缓冲继续，下次 setActive(true) 时无延迟。
-    // 不再 emit 全 0：active 只是 UI 提示（WaveVisualizer 用它控制 opacity），
-    // 实际 bands 仍由 pacer 30+ fps 发出来；暂停状态下视觉上自然变暗。
+    if (!playing && wasPlaying) {
+      // 暂停瞬间立刻把 UI 衰减到 0（pacer 不知道我们暂停了，这边主动做）
+      this.idlePhase = 1.0;
+    }
   }
 
   async stop(): Promise<void> {
@@ -223,8 +228,21 @@ export class AudioVisualizer {
 
   private emitBands(bands: number[]): void {
     if (!this.callback) return;
-    // native 已经做了 attack/release 平滑，这里直接透传给 UI。
-    // fallback 模式 emit 的本来就是连续的呼吸/正弦值，也不需要二次平滑。
+    // active=false 时（用户没按播放、或暂停中），UI 不应该跟着真实音频律动。
+    // 不简单丢帧 —— 那样过去的状态会冻在屏幕上；而是按指数曲线从最后一帧
+    // 衰减到 0，几百毫秒内自然平静下来。这样：
+    //   1) "还没播放"时柱条立刻就静止了（idlePhase=1 → 真实 bands 被乘上 0）
+    //   2) 暂停时柱条柔和回落到底
+    //   3) 一旦 setActive(true)，下一帧立刻是真实 bands，反应灵敏
+    if (!this.active) {
+      this.idlePhase *= 0.85; // ~150ms 衰减到 ~10%
+      if (this.idlePhase < 0.01) this.idlePhase = 0;
+      const damped = bands.map((v: number) => v * this.idlePhase);
+      this.prevBands = damped;
+      this.callback(damped);
+      return;
+    }
+    this.idlePhase = 1.0;
     this.prevBands = bands;
     this.callback(bands);
   }
