@@ -11,6 +11,11 @@
  *   The OH_AudioCodec dispatches output buffers on a codec-internal thread.
  *   We funnel each band frame through napi_threadsafe_function so the JS
  *   callback always runs on the original ArkTS thread.
+ *
+ * Note on logging:
+ *   HarmonyOS hilog redacts every numeric/string format placeholder as
+ *   <private> by default. Use %{public}... explicitly when we want the
+ *   real value to show up.
  */
 
 #include <atomic>
@@ -146,7 +151,7 @@ napi_value Create(napi_env env, napi_callback_info info) {
         uint32_t emitted = ++g_bands_emitted;
         if (emitted == 1 || emitted == 10 || (emitted % 100) == 0) {
             OH_LOG_Print(LOG_APP, LOG_WARN, 0x0000, "xfm_napi",
-                "bands emitted: total=%u (b0=%.2f b8=%.2f b15=%.2f)",
+                "bands emitted: total=%{public}u (b0=%{public}.2f b8=%{public}.2f b15=%{public}.2f)",
                 emitted, bands.empty() ? 0.0f : bands[0],
                 bands.size() > 8 ? bands[8] : 0.0f,
                 bands.size() > 15 ? bands[15] : 0.0f);
@@ -169,26 +174,39 @@ napi_value Create(napi_env env, napi_callback_info info) {
 
     napi_value result;
     napi_create_uint32(env, handle, &result);
-    LOGW("create -> handle=%u (use WARN for diag visibility)", handle);
+    LOGW("create -> handle=%{public}u", handle);
     return result;
 }
 
 napi_value FeedAdts(napi_env env, napi_callback_info info) {
+    // Diagnostic: track entries to feedAdts itself so we can prove ArkTS
+    // is actually calling us. Print on entry 1 / 5 / 10 / every 200 thereafter.
+    static std::atomic<uint32_t> entries{0};
+    uint32_t entry = ++entries;
+    if (entry == 1 || entry == 5 || entry == 10 || (entry % 200) == 0) {
+        LOGW("feedAdts ENTRY #%{public}u", entry);
+    }
+
     size_t argc = 2;
     napi_value argv[2];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     if (argc < 2) {
+        LOGE("feedAdts: missing args (argc=%{public}zu)", argc);
         napi_throw_error(env, nullptr, "feedAdts(handle, frame): missing args");
         return nullptr;
     }
     uint32_t handle = 0;
     napi_get_value_uint32(env, argv[0], &handle);
     auto inst = FindInstance(handle);
-    if (!inst) return nullptr;
+    if (!inst) {
+        if (entry < 10) LOGW("feedAdts: no instance for handle=%{public}u", handle);
+        return nullptr;
+    }
 
     bool is_typedarray = false;
     napi_is_typedarray(env, argv[1], &is_typedarray);
     if (!is_typedarray) {
+        LOGE("feedAdts: frame must be Uint8Array");
         napi_throw_error(env, nullptr, "feedAdts: frame must be Uint8Array");
         return nullptr;
     }
@@ -201,6 +219,10 @@ napi_value FeedAdts(napi_env env, napi_callback_info info) {
     napi_status s = napi_get_typedarray_info(env, argv[1], &type, &length, &data,
                                              &array_buffer, &byte_offset);
     if (s != napi_ok || data == nullptr || length == 0 || type != napi_uint8_array) {
+        if (entry < 10) {
+            LOGW("feedAdts: typedarray rejected status=%{public}d type=%{public}d len=%{public}zu",
+                 (int)s, (int)type, length);
+        }
         return nullptr;
     }
     const uint8_t* bytes = static_cast<const uint8_t*>(data);
@@ -209,6 +231,10 @@ napi_value FeedAdts(napi_env env, napi_callback_info info) {
     if (!inst->decoder_inited) {
         AdtsHeader hdr{};
         if (!ParseAdtsHeader(bytes, length, hdr)) {
+            if (entry < 5) {
+                LOGW("feedAdts: ADTS header parse failed (b0=%{public}02x b1=%{public}02x len=%{public}zu)",
+                     bytes[0], length > 1 ? bytes[1] : 0, length);
+            }
             return nullptr; // wait for a valid frame
         }
         // PCM callback hops directly into the analyzer (same internal thread).
@@ -218,18 +244,18 @@ napi_value FeedAdts(napi_env env, napi_callback_info info) {
                 if (analyzer_ptr) analyzer_ptr->FeedPcm(samples, count, sr, ch);
             });
         if (!ok) {
-            LOGE("decoder init failed (handle=%u, sr=%d, ch=%d) -- check OH_AudioCodec_Configure log lines above",
-                 handle, hdr.sample_rate, hdr.channels);
+            LOGE("decoder init FAILED (sr=%{public}d ch=%{public}d) -- check xfm_aac log",
+                 hdr.sample_rate, hdr.channels);
             return nullptr;
         }
         inst->decoder_inited = true;
-        LOGW("decoder inited from first ADTS: sr=%d ch=%d", hdr.sample_rate, hdr.channels);
+        LOGW("decoder inited from first ADTS: sr=%{public}d ch=%{public}d", hdr.sample_rate, hdr.channels);
     }
 
     inst->decoder->FeedAdts(bytes, length);
     uint32_t fed = ++g_adts_fed;
     if (fed == 1 || fed == 10 || fed == 50 || (fed % 200) == 0) {
-        LOGW("feedAdts stats: total=%u (last frame=%zub)", fed, length);
+        LOGW("feedAdts stats: total=%{public}u (last frame=%{public}zub)", fed, length);
     }
     return nullptr;
 }
@@ -271,7 +297,7 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
             inst->tsfn = nullptr;
         }
     }
-    LOGI("destroy handle=%u", handle);
+    LOGW("destroy handle=%{public}u", handle);
     return nullptr;
 }
 
@@ -283,6 +309,7 @@ napi_value Init(napi_env env, napi_value exports) {
         { "destroy",  nullptr, Destroy,  nullptr, nullptr, nullptr, napi_default, nullptr },
     };
     napi_define_properties(env, exports, sizeof(descs) / sizeof(descs[0]), descs);
+    LOGW("xfm_spectrum module loaded");
     return exports;
 }
 

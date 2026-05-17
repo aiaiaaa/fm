@@ -6,7 +6,10 @@
 #include <multimedia/player_framework/native_avcodec_base.h>
 
 #define LOG_TAG "xfm_aac"
-#define LOGI(fmt, ...) OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, LOG_TAG, fmt, ##__VA_ARGS__)
+// All formatted args use %{public}... explicitly because hilog redacts
+// otherwise. Keep the diag chain at WARN so default device filters let it
+// through.
+#define LOGI(fmt, ...) OH_LOG_Print(LOG_APP, LOG_WARN, 0x0000, LOG_TAG, fmt, ##__VA_ARGS__)
 #define LOGW(fmt, ...) OH_LOG_Print(LOG_APP, LOG_WARN, 0x0000, LOG_TAG, fmt, ##__VA_ARGS__)
 #define LOGE(fmt, ...) OH_LOG_Print(LOG_APP, LOG_ERROR, 0x0000, LOG_TAG, fmt, ##__VA_ARGS__)
 
@@ -56,7 +59,7 @@ bool AacDecoder::Init(int sample_rate, int channels, PcmCallback on_pcm) {
     };
     OH_AVErrCode rc = OH_AudioCodec_RegisterCallback(codec_, cb, this);
     if (rc != AV_ERR_OK) {
-        LOGE("RegisterCallback failed: %d", rc);
+        LOGE("RegisterCallback failed: %{public}d", rc);
         return false;
     }
 
@@ -71,24 +74,24 @@ bool AacDecoder::Init(int sample_rate, int channels, PcmCallback on_pcm) {
     rc = OH_AudioCodec_Configure(codec_, fmt);
     OH_AVFormat_Destroy(fmt);
     if (rc != AV_ERR_OK) {
-        LOGE("Configure failed: %d", rc);
+        LOGE("Configure failed: %{public}d", rc);
         return false;
     }
 
     rc = OH_AudioCodec_Prepare(codec_);
     if (rc != AV_ERR_OK) {
-        LOGE("Prepare failed: %d", rc);
+        LOGE("Prepare failed: %{public}d", rc);
         return false;
     }
 
     rc = OH_AudioCodec_Start(codec_);
     if (rc != AV_ERR_OK) {
-        LOGE("Start failed: %d", rc);
+        LOGE("Start failed: %{public}d", rc);
         return false;
     }
 
     ready_ = true;
-    LOGW("AAC decoder ready @ %dHz x%d", sample_rate, channels);
+    LOGW("AAC decoder ready @ %{public}dHz x%{public}d", sample_rate, channels);
     return true;
 }
 
@@ -121,7 +124,7 @@ void AacDecoder::FeedAdts(const uint8_t* data, size_t size) {
     uint8_t* addr = OH_AVBuffer_GetAddr(buffer);
     int32_t cap = OH_AVBuffer_GetCapacity(buffer);
     if (addr == nullptr || cap <= 0 || static_cast<int32_t>(size) > cap) {
-        LOGW("input buffer too small: cap=%d need=%zu", cap, size);
+        LOGW("input buffer too small: cap=%{public}d need=%{public}zu", cap, size);
         return;
     }
     std::memcpy(addr, data, size);
@@ -135,12 +138,12 @@ void AacDecoder::FeedAdts(const uint8_t* data, size_t size) {
 
     OH_AVErrCode rc = OH_AVBuffer_SetBufferAttr(buffer, &attr);
     if (rc != AV_ERR_OK) {
-        LOGW("SetBufferAttr failed: %d", rc);
+        LOGW("SetBufferAttr failed: %{public}d", rc);
         return;
     }
     rc = OH_AudioCodec_PushInputBuffer(codec_, index);
     if (rc != AV_ERR_OK) {
-        LOGW("PushInputBuffer failed: %d", rc);
+        LOGW("PushInputBuffer failed: %{public}d", rc);
     }
 }
 
@@ -228,7 +231,7 @@ void AacDecoder::OnOutputBufferAvailable(uint32_t index, OH_AVBuffer* buffer) {
 }
 
 void AacDecoder::OnError(int32_t error_code) {
-    LOGE("codec error: %d", error_code);
+    LOGE("codec error: %{public}d", error_code);
 }
 
 void AacDecoder::OnStreamChanged(OH_AVFormat* format) {
@@ -238,7 +241,7 @@ void AacDecoder::OnStreamChanged(OH_AVFormat* format) {
     OH_AVFormat_GetIntValue(format, OH_MD_KEY_AUD_CHANNEL_COUNT, &ch);
     sample_rate_ = sr;
     channels_ = ch;
-    LOGI("stream changed: %dHz x%d", sr, ch);
+    LOGI("stream changed: %{public}dHz x%{public}d", sr, ch);
 }
 
 } // namespace xfm
