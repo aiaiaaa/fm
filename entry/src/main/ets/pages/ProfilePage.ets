@@ -157,38 +157,72 @@ export struct ProfilePage {
           .padding({ left: 24, right: 24 })
           .margin({ top: this.statusBarHeight + 16, bottom: 28 })
 
-          // 个人信息卡片
+          // 个人信息卡片 —— 月亮效果头像
           Column() {
             Stack() {
+              // 最外层：大范围柔和绿色辉光（模拟月球周围的大气散射光晕）
               Column()
-                .width(92).height(92)
-                .borderRadius(46)
-                .linearGradient({
-                  angle: 135,
-                  colors: [['#52FFA1', 0], ['#00D2FF', 1]]
+                .width(110).height(110)
+                .borderRadius(55)
+                .radialGradient({
+                  center: ['50%', '50%'],
+                  radius: 55,
+                  colors: [['#0052FFA1', 0.55], ['#2252FFA1', 0.72], ['#0052FFA1', 1.0]]
                 })
-                .opacity(0.2)
 
+              // 外部辉光环：模拟月球边缘的绿色大气折射光
               Column()
-                .width(84).height(84)
-                .borderRadius(42)
-                .border({ width: 2, color: '#22FFFFFF' })
+                .width(96).height(96)
+                .borderRadius(48)
+                .shadow({ radius: 28, color: '#6052FFA1', offsetX: 0, offsetY: 0 })
 
-              Stack() {
-                Column()
-                  .width(76).height(76)
-                  .borderRadius(38)
-                  .backgroundColor('#111622')
+              // 月球球体 —— 暗面（主体深色球，左上微亮模拟反射）
+              Column()
+                .width(88).height(88)
+                .borderRadius(44)
+                .radialGradient({
+                  center: ['35%', '30%'],
+                  radius: 60,
+                  colors: [['#1A2234', 0], ['#0D1320', 0.5], ['#060A12', 1.0]]
+                })
+                .shadow({ radius: 20, color: '#4052FFA1', offsetX: 0, offsetY: 0 })
 
-                Text('X')
-                  .fontSize(32)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor('#52FFA1')
-              }
-              .width(76).height(76)
-              .alignContent(Alignment.Center)
+              // 月球表面：亮边缘弧光（右下侧绿色新月形高光）
+              Column()
+                .width(88).height(88)
+                .borderRadius(44)
+                .radialGradient({
+                  center: ['75%', '70%'],
+                  radius: 50,
+                  colors: [['#0052FFA1', 0], ['#3352FFA1', 0.6], ['#5552FFA1', 0.82], ['#0052FFA1', 1.0]]
+                })
+
+              // 顶部微弱反光点（模拟月表凸起反射）
+              Column()
+                .width(20).height(12)
+                .borderRadius(6)
+                .backgroundColor('#10FFFFFF')
+                .opacity(0.3)
+                .position({ x: 28, y: 18 })
+
+              // 月球表面"陨石坑"质感 —— 用几个小暗点模拟
+              Column()
+                .width(8).height(8)
+                .borderRadius(4)
+                .backgroundColor('#08000000')
+                .position({ x: 36, y: 42 })
+              Column()
+                .width(5).height(5)
+                .borderRadius(3)
+                .backgroundColor('#06000000')
+                .position({ x: 52, y: 55 })
+              Column()
+                .width(6).height(6)
+                .borderRadius(3)
+                .backgroundColor('#05000000')
+                .position({ x: 24, y: 60 })
             }
-            .width(92).height(92)
+            .width(110).height(110)
             .alignContent(Alignment.Center)
 
             Text('X.FM 听众')
