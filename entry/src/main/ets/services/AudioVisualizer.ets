@@ -40,6 +40,10 @@ export class AudioVisualizer {
   // active=false 时把 UI 衰减到 0 用的状态：1.0=刚暂停，逐步降到 0=完全静止
   private idlePhase: number = 1.0;
 
+  // 暂停待机动画状态
+  private idleTimer: number = -1;
+  private idleWavePhase: number = 0;
+
   // ADTS 节流队列：HlsAacTap 一次性把整个 segment 几百帧同步 emit 出来，
   // 如果直接灌进 NDK，输入队列瞬间打满（cap=32），后续帧全被丢；codec 飞速
   // 解码完攒在 ring 里给 pacer，pacer 排空之后 ring 又空 4 秒。视觉就是
@@ -66,6 +70,8 @@ export class AudioVisualizer {
     this.callback = cb;
     this.active = false;
     this.prevBands = new Array<number>(BAND_COUNT).fill(0);
+    this.idlePhase = 0; // 跳过衰减，直接进入待机
+    this.startIdleAnimation();
     if (this.streamUrl) {
       await this.startRealPipeline();
     } else {
@@ -81,10 +87,15 @@ export class AudioVisualizer {
     if (!playing && wasPlaying) {
       // 暂停瞬间立刻把 UI 衰减到 0（pacer 不知道我们暂停了，这边主动做）
       this.idlePhase = 1.0;
+      this.startIdleAnimation();
+    }
+    if (playing && !wasPlaying) {
+      this.stopIdleAnimation();
     }
   }
 
   async stop(): Promise<void> {
+    this.stopIdleAnimation();
     if (this.healthCheckTimer >= 0) {
       clearTimeout(this.healthCheckTimer);
       this.healthCheckTimer = -1;
@@ -266,21 +277,68 @@ export class AudioVisualizer {
   private emitBands(bands: number[]): void {
     if (!this.callback) return;
     // active=false 时（用户没按播放、或暂停中），UI 不应该跟着真实音频律动。
-    // 不简单丢帧 —— 那样过去的状态会冻在屏幕上；而是按指数曲线从最后一帧
-    // 衰减到 0，几百毫秒内自然平静下来。这样：
-    //   1) "还没播放"时柱条立刻就静止了（idlePhase=1 → 真实 bands 被乘上 0）
-    //   2) 暂停时柱条柔和回落到底
-    //   3) 一旦 setActive(true)，下一帧立刻是真实 bands，反应灵敏
+    // 衰减阶段让柱条柔和落下，之后待机动画接管。
     if (!this.active) {
       this.idlePhase *= 0.85; // ~150ms 衰减到 ~10%
       if (this.idlePhase < 0.01) this.idlePhase = 0;
-      const damped = bands.map((v: number) => v * this.idlePhase);
-      this.prevBands = damped;
-      this.callback(damped);
+      if (this.idlePhase > 0) {
+        const damped = bands.map((v: number) => v * this.idlePhase);
+        this.prevBands = damped;
+        this.callback(damped);
+      }
+      // idlePhase=0 后由 idleTimer 接管，不再这里发帧
       return;
     }
     this.idlePhase = 1.0;
     this.prevBands = bands;
+    this.callback(bands);
+  }
+
+  /* ============= 暂停待机动画 ============= */
+
+  /**
+   * 暂停时的柔和待机动画：
+   *   - 基础形状：中间高两边低的钟形曲线
+   *   - 叠加一个从左到右缓慢传递的波浪（随机相位偏移），让整体看起来有生机但安静
+   *   - 60ms 一帧（~16fps），低功耗
+   */
+  private startIdleAnimation(): void {
+    if (this.idleTimer >= 0) return; // 已在跑
+    this.idleWavePhase = 0;
+    this.idleTimer = setInterval(() => {
+      this.idleAnimationTick();
+    }, 60);
+  }
+
+  private stopIdleAnimation(): void {
+    if (this.idleTimer >= 0) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = -1;
+    }
+  }
+
+  private idleAnimationTick(): void {
+    if (!this.callback) return;
+    // 如果还在衰减阶段（emitBands 还在跑），不发
+    if (this.idlePhase > 0.01) return;
+
+    this.idleWavePhase += 0.08; // 控制波浪传递速度
+
+    const N = BAND_COUNT;
+    const center = (N - 1) / 2;
+    const bands: number[] = [];
+
+    for (let i = 0; i < N; i++) {
+      const x = (i - center) / center; // -1..1
+      // 钟形基底：中间 ~0.35，两端 ~0.08
+      const bell = 0.08 + 0.27 * Math.exp(-x * x * 2.5);
+      // 从左到右传递的波浪：sin 波沿 index 方向走，乘以小振幅
+      const wave = Math.sin(this.idleWavePhase - i * 0.4) * 0.08;
+      // 叠加一个更慢的随机感呼吸（全局）
+      const breath = Math.sin(this.idleWavePhase * 0.3) * 0.03;
+      bands.push(Math.max(0.05, Math.min(0.5, bell + wave + breath)));
+    }
+
     this.callback(bands);
   }
 }

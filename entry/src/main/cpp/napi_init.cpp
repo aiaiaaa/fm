@@ -183,9 +183,9 @@ void CallJsBands(napi_env env, napi_value js_callback, void* /*context*/, void* 
  * window looks like a smooth fade-out instead of a freeze. We stop
  * emitting only after the fade reaches near-zero (kDecayStopThreshold).
  */
-constexpr float kUnderrunDecay = 0.92f;        // per tick; ~250ms half-life
-constexpr float kDecayStopThreshold = 0.005f;  // below this we stop emitting
-constexpr int kMaxUnderrunDecayTicks = 64;     // ~1.5s safety cap
+constexpr float kUnderrunDecay = 0.97f;        // per tick; ~750ms half-life (gentler fade)
+constexpr float kDecayStopThreshold = 0.003f;  // below this we stop emitting
+constexpr int kMaxUnderrunDecayTicks = 120;    // ~2.8s safety cap (longer tail)
 void PacerLoop(std::shared_ptr<Instance> inst) {
     while (inst->pacer_run.load(std::memory_order_acquire)) {
         auto next_tick = std::chrono::steady_clock::now() +
