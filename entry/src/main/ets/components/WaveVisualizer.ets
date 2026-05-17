@@ -42,16 +42,21 @@ export struct WaveVisualizer {
 
   build() {
     Row({ space: 4 }) {
-      ForEach(this.levels, (lv: number, idx: number) => {
+      // !!! ArkUI 关键坑位：
+      //   ForEach itemBuilder 的闭包参数 lv 是首次 build 的 number 快照，
+      //   ArkUI 状态系统不会追踪它。只有读取 this.levels[idx]（真正的 @State）
+      //   时框架才会建立依赖关系，这样 levels 数组重新赋值时 height / opacity
+      //   才会刷新，柱子才会真的"动"起来。
+      ForEach(this.levels, (_lv: number, idx: number) => {
         Column()
           .width(5)
-          .height(Math.max(5, lv * this.maxHeight))
+          .height(Math.max(5, (this.levels[idx] ?? 0) * this.maxHeight))
           .borderRadius(2.5)
           .linearGradient({
             angle: 180,
             colors: this.getBarColors(idx)
           })
-          .opacity(this.active ? (0.6 + lv * 0.4) : 0.2)
+          .opacity(this.active ? (0.6 + (this.levels[idx] ?? 0) * 0.4) : 0.2)
       }, (_: number, idx: number) => `wv-${idx}`)
     }
     .height(this.maxHeight)
