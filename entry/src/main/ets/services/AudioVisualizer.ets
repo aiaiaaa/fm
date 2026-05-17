@@ -40,6 +40,16 @@ export class AudioVisualizer {
   // active=false 时把 UI 衰减到 0 用的状态：1.0=刚暂停，逐步降到 0=完全静止
   private idlePhase: number = 1.0;
 
+  // ADTS 节流队列：HlsAacTap 一次性把整个 segment 几百帧同步 emit 出来，
+  // 如果直接灌进 NDK，输入队列瞬间打满（cap=32），后续帧全被丢；codec 飞速
+  // 解码完攒在 ring 里给 pacer，pacer 排空之后 ring 又空 4 秒。视觉就是
+  // "动一下卡一下"。这边按 AAC 帧的真实播放节拍（23ms/帧）匀速喂给 NDK，
+  // 整条管线变成稳态流。
+  private adtsQueue: Uint8Array[] = [];
+  private adtsTickTimer: number = -1;
+  private static readonly ADTS_TICK_MS = 23;
+  private static readonly ADTS_QUEUE_MAX = 256; // ~6s buffer，超出丢老帧
+
   /**
    * 设置当前要可视化的流 URL（m3u8）。在 start 之前或之后调用都行。
    */
@@ -83,6 +93,11 @@ export class AudioVisualizer {
       clearInterval(this.fallbackTimer);
       this.fallbackTimer = -1;
     }
+    if (this.adtsTickTimer >= 0) {
+      clearInterval(this.adtsTickTimer);
+      this.adtsTickTimer = -1;
+    }
+    this.adtsQueue = [];
     if (this.tap) {
       const t = this.tap;
       this.tap = null;
@@ -115,14 +130,26 @@ export class AudioVisualizer {
     }
 
     this.tap = new HlsAacTap((adts: Uint8Array) => {
-      if (this.nativeHandle !== 0) {
-        try {
-          spectrum.feedAdts(this.nativeHandle, adts);
-        } catch (e) {
-          hilog.warn(0x0000, TAG, `feedAdts threw: ${(e as Error).message}`);
-        }
+      // 不再直接调 spectrum.feedAdts —— 入队，由 tick timer 23ms 一帧匀速喂。
+      if (this.adtsQueue.length >= AudioVisualizer.ADTS_QUEUE_MAX) {
+        this.adtsQueue.shift(); // 丢最老的
       }
+      this.adtsQueue.push(adts);
     });
+
+    // 启动节流 tick：每 23ms（= 1024 samples / 44.1kHz，AAC 一帧时长）从队列
+    // 取一帧喂给 NDK。这个间隔等于音频实际播放节拍，所以 ADTS 流入 NDK 的
+    // 速率 = NDK 解码 PCM 的速率 = pacer emit bands 的速率 = 视觉刷新速率。
+    if (this.adtsTickTimer >= 0) clearInterval(this.adtsTickTimer);
+    this.adtsTickTimer = setInterval(() => {
+      if (this.nativeHandle === 0 || this.adtsQueue.length === 0) return;
+      const frame = this.adtsQueue.shift()!;
+      try {
+        spectrum.feedAdts(this.nativeHandle, frame);
+      } catch (e) {
+        hilog.warn(0x0000, TAG, `feedAdts threw: ${(e as Error).message}`);
+      }
+    }, AudioVisualizer.ADTS_TICK_MS);
 
     try {
       await this.tap.start(this.streamUrl, () => {
@@ -152,6 +179,11 @@ export class AudioVisualizer {
   }
 
   private async restartRealPipeline(): Promise<void> {
+    if (this.adtsTickTimer >= 0) {
+      clearInterval(this.adtsTickTimer);
+      this.adtsTickTimer = -1;
+    }
+    this.adtsQueue = [];
     if (this.tap) {
       const t = this.tap;
       this.tap = null;
@@ -174,6 +206,11 @@ export class AudioVisualizer {
   private async switchToFallback(): Promise<void> {
     if (this.fallbackActive) return;
     this.fallbackActive = true;
+    if (this.adtsTickTimer >= 0) {
+      clearInterval(this.adtsTickTimer);
+      this.adtsTickTimer = -1;
+    }
+    this.adtsQueue = [];
     if (this.tap) {
       const t = this.tap;
       this.tap = null;
