@@ -1,8 +1,9 @@
-import window from '@ohos.window';
-import promptAction from '@ohos.promptAction';
-import common from '@ohos.app.ability.common';
+import { window } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { RadioPlayer, PlayerState } from '../services/RadioPlayer';
 import { BackgroundTask } from '../services/BackgroundTask';
+import { ListeningStats } from '../services/ListeningStats';
 import { MODES, ModeId, ModeConfig } from '../model/Modes';
 import { MeteorField } from '../components/MeteorField';
 import { WaveVisualizer } from '../components/WaveVisualizer';
@@ -72,6 +73,7 @@ export struct PlayerPage {
 
     // 初始化播放器 + AVSession + 后台任务
     const context = getContext(this) as common.UIAbilityContext;
+    ListeningStats.init(context);
     this.player.init(context, {
       onStateChange: (s: PlayerState) => {
         switch (s) {
@@ -82,15 +84,18 @@ export struct PlayerPage {
             this.isLoading = false;
             this.isPlaying = true;
             BackgroundTask.start(context);
+            ListeningStats.startCounting(this.mode === 'focus' ? 'focus' : 'sleep');
             break;
           case 'paused':
           case 'idle':
             this.isPlaying = false;
             this.isLoading = false;
+            ListeningStats.stopCounting();
             break;
           case 'error':
             this.isPlaying = false;
             this.isLoading = false;
+            ListeningStats.stopCounting();
             break;
           default:
             break;
@@ -222,7 +227,7 @@ export struct PlayerPage {
             .borderRadius(2)
             .linearGradient({
               angle: 180,
-              colors: [['#2EE89D', 0], ['#00F2FE', 1]]
+              colors: [[0x52FFA1, 0], [0x00D2FF, 1]]
             })
         }, (i: number) => `lb-${i}`)
       }
@@ -232,7 +237,7 @@ export struct PlayerPage {
       Text('X.FM')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
+        .fontColor(0xFFFFFF)
         .letterSpacing(2)
     }
     .width('100%')
@@ -247,25 +252,25 @@ export struct PlayerPage {
       Text(title)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
+        .fontColor(0xFFFFFF)
         .layoutWeight(1)
 
       // 仅 "正在直播" 显示 LIVE + mini wave
       if (title === '正在直播') {
         Row({ space: 10 }) {
           Row({ space: 6 }) {
-            Column().width(7).height(7).borderRadius(4).backgroundColor('#2EE89D')
-              .shadow({ radius: 6, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+            Column().width(7).height(7).borderRadius(4).backgroundColor(0x52FFA1)
+              .shadow({ radius: 6, color: '#52FFA1', offsetX: 0, offsetY: 0 })
             Text('LIVE')
               .fontSize(12)
-              .fontColor('#FFFFFFCC')
+              .fontColor(0xCCFFFFFF)
               .letterSpacing(1)
           }
           .alignItems(VerticalAlign.Center)
           .padding({ left: 10, right: 12, top: 4, bottom: 4 })
           .borderRadius(14)
-          .border({ width: 1, color: '#FFFFFF22' })
-          .backgroundColor('#FFFFFF08')
+          .border({ width: 1, color: 0x0DFFFFFF })
+          .backgroundColor(0x08FFFFFF)
 
           Row({ space: 2 }) {
             ForEach(this.miniBars, (lv: number, idx: number) => {
@@ -273,7 +278,7 @@ export struct PlayerPage {
                 .width(2)
                 .height(4 + lv * 14)
                 .borderRadius(1)
-                .backgroundColor('#2EE89D')
+                .backgroundColor('#52FFA1')
                 .opacity(0.65 + lv * 0.35)
             }, (_: number, idx: number) => `mini-${idx}`)
           }
@@ -315,7 +320,7 @@ export struct PlayerPage {
         .width(84)
         .height(84)
         .borderRadius(42)
-        .backgroundColor('#2EE89D')
+        .backgroundColor('#52FFA1')
         .opacity(this.isPlaying ? this.glowOpacity * 0.6 : 0.22)
         .scale({ x: this.glowScale, y: this.glowScale })
 
@@ -339,13 +344,14 @@ export struct PlayerPage {
       .width(68)
       .height(68)
       .borderRadius(34)
-      .backgroundColor('#2EE89D')
+      .backgroundColor('#52FFA1')
       .alignContent(Alignment.Center)
-      .shadow({ radius: 22, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+      .shadow({ radius: 22, color: '#52FFA1', offsetX: 0, offsetY: 0 })
     }
     .width(84)
     .height(84)
     .alignContent(Alignment.Center)
+    .focusable(false)
     .onClick(() => this.togglePlay())
   }
 
@@ -359,14 +365,15 @@ export struct PlayerPage {
         .borderRadius(24)
         .linearGradient({
           angle: 160,
-          colors: [['#12183A', 0], ['#0B0F2A', 0.6], ['#080B22', 1]]
+          colors: [['#111622', 0], ['#0E1320', 0.6], ['#0A0E1A', 1]]
         })
-        .border({ width: 1, color: '#FFFFFF10' })
+        .border({ width: 1, color: '#08FFFFFF' })
+        .shadow({ radius: 30, color: '#88000000', offsetX: 0, offsetY: 10 })
 
       // 星空
       this.StarField()
-      // 流星层
-      MeteorField({ accent: cfg.accent, accentSecond: cfg.accentSecond, density: 5 })
+      // 流星层（降低密度到 3，匹配 CSS 6s 周期的低频效果）
+      MeteorField({ accent: cfg.accent, accentSecond: cfg.accentSecond, density: 3 })
 
       Column() {
         // 顶部标签 "AGENT · 实时播报"
@@ -379,9 +386,9 @@ export struct PlayerPage {
           Text('AGENT')
             .fontSize(12).fontColor(cfg.accent).fontWeight(FontWeight.Medium)
           Text('·')
-            .fontSize(12).fontColor('#FFFFFF88')
+            .fontSize(12).fontColor('#88FFFFFF')
           Text(this.mode === 'focus' ? '实时播报' : '助眠播放')
-            .fontSize(12).fontColor('#FFFFFFCC')
+            .fontSize(12).fontColor('#CCFFFFFF')
         }
         .width('100%')
         .padding({ left: 22, top: 20 })
@@ -399,12 +406,12 @@ export struct PlayerPage {
 
           Text(this.mode === 'focus' ? 'AGENT正在为您播报' : cfg.subtitle)
             .fontSize(13)
-            .fontColor('#FFFFFFAA')
+            .fontColor('#AAFFFFFF')
             .margin({ top: 10 })
 
           Text(cfg.desc)
             .fontSize(12)
-            .fontColor('#FFFFFF66')
+            .fontColor('#5E6678')
             .letterSpacing(2)
             .margin({ top: 6 })
         }
@@ -428,11 +435,12 @@ export struct PlayerPage {
           Stack() {
             Polygon({ width: 14, height: 16 })
               .points([[14, 0], [0, 8], [14, 16]])
-              .fill('#FFFFFF66')
+              .fill('#5E6678')
               .stroke(Color.Transparent)
           }
           .width(44).height(44)
           .alignContent(Alignment.Center)
+          .focusable(false)
           .onClick(() => {
             if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
           })
@@ -444,11 +452,12 @@ export struct PlayerPage {
           Stack() {
             Polygon({ width: 14, height: 16 })
               .points([[0, 0], [14, 8], [0, 16]])
-              .fill('#FFFFFF66')
+              .fill('#5E6678')
               .stroke(Color.Transparent)
           }
           .width(44).height(44)
           .alignContent(Alignment.Center)
+          .focusable(false)
           .onClick(() => {
             if (this.mode === 'focus') this.switchLang(this.lang === 'cn' ? 'en' : 'cn');
           })
@@ -476,12 +485,12 @@ export struct PlayerPage {
       // 同心圆雷达样式
       Stack() {
         Column().width(60).height(60).borderRadius(30)
-          .border({ width: 2, color: '#2EE89D55' })
+          .border({ width: 1.5, color: '#1AFFFFFF' })
         Column().width(42).height(42).borderRadius(21)
-          .border({ width: 2, color: '#2EE89D88' })
+          .border({ width: 1.5, color: '#33FFFFFF' })
         Column().width(22).height(22).borderRadius(11)
-          .backgroundColor('#2EE89D')
-          .shadow({ radius: 10, color: '#2EE89D', offsetX: 0, offsetY: 0 })
+          .backgroundColor('#52FFA1')
+          .shadow({ radius: 10, color: '#52FFA1', offsetX: 0, offsetY: 0 })
       }
       .width(60).height(60)
       .alignContent(Alignment.Center)
@@ -505,12 +514,12 @@ export struct PlayerPage {
       Text(m === 'focus' ? '专注电台' : '睡眠电台')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+        .fontColor(m === 'focus' ? '#52FFA1' : '#B69CFF')
         .margin({ top: 18 })
 
       Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
         .fontSize(12)
-        .fontColor('#FFFFFF99')
+        .fontColor('#99FFFFFF')
         .margin({ top: 8 })
 
       Blank().layoutWeight(1)
@@ -523,7 +532,7 @@ export struct PlayerPage {
               .width(2)
               .height(4 + lv * 10)
               .borderRadius(1)
-              .backgroundColor(m === 'focus' ? '#2EE89D' : '#B69CFF')
+              .backgroundColor(m === 'focus' ? '#52FFA1' : '#B69CFF')
           }, (_: number, idx: number) => `mc-${m}-${idx}`)
         }
         .alignItems(VerticalAlign.Center)
@@ -531,12 +540,12 @@ export struct PlayerPage {
 
         Text(m === 'focus' ? (this.mode === 'focus' && this.isPlaying ? '正在直播' : '正在直播') : '助眠播放')
           .fontSize(13)
-          .fontColor('#FFFFFFDD')
+          .fontColor('#DDFFFFFF')
       }
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .borderRadius(18)
-      .backgroundColor(m === 'focus' ? '#2EE89D22' : '#8B7CF633')
-      .border({ width: 1, color: m === 'focus' ? '#2EE89D55' : '#8B7CF655' })
+      .backgroundColor(m === 'focus' ? '#2252FFA1' : '#338B7CF6')
+      .border({ width: 0.5, color: '#0DFFFFFF' })
       .margin({ bottom: 22 })
     }
     .layoutWeight(1)
@@ -545,14 +554,15 @@ export struct PlayerPage {
     .linearGradient({
       angle: 160,
       colors: m === 'focus'
-        ? [['#0A2A22', 0], ['#081828', 1]]
-        : [['#1A1342', 0], ['#0E0B28', 1]]
+        ? [['#0E1E1A', 0], ['#111622', 1]]
+        : [['#161230', 0], ['#111622', 1]]
     })
     .border({
-      width: 1,
-      color: m === 'focus' ? '#2EE89D33' : '#8B7CF644'
+      width: 0.5,
+      color: '#0DFFFFFF'
     })
     .alignItems(HorizontalAlign.Center)
+    .focusable(false)
     .onClick(() => this.switchMode(m))
   }
 
@@ -573,7 +583,7 @@ export struct PlayerPage {
         .width('100%').height('100%')
         .linearGradient({
           angle: 180,
-          colors: [['#070B1D', 0], ['#0E1333', 0.5], ['#050814', 1]]
+          colors: [['#0A0F1A', 0], ['#0A0F1A', 0.5], ['#0A0F1A', 1]]
         })
 
       Scroll() {
@@ -591,15 +601,18 @@ export struct PlayerPage {
           this.SectionTitle('电台模式')
           this.ModeRow()
 
-          Blank().height(40)
+          // 留白高度需超过底部悬浮胶囊TabBar（56+20=76vp）
+          Blank().height(110)
         }
         .width('100%')
       }
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
+      .focusable(false)
     }
     .width('100%')
     .height('100%')
+    .focusable(false)
   }
 }

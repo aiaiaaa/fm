@@ -1,20 +1,23 @@
-import audio from '@ohos.multimedia.audio';
-import hilog from '@ohos.hilog';
+import { audio } from '@kit.AudioKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'AudioVisualizer';
 
 /**
- * 音波可视化服务：调用鸿蒙底层音频 API 感知系统输出状态，
- * 并据此生成更贴近真实播放的音波数据。
+ * 音波可视化服务：调用鸿蒙底层音频 API 获取系统音量，
+ * 结合播放状态生成贴近真实播放的音波数据。
  *
- * 核心依赖：
- *   - @ohos.multimedia.audio 的 AudioStreamManager：订阅 RENDERER 变化
- *   - AudioVolumeGroupManager：读取当前媒体音量
+ * 核心依赖（HarmonyOS NEXT API 12+ / HarmonyOS 6.10）：
+ *   - @kit.AudioKit → audio.AudioManager.getVolumeManager()
+ *   - AudioVolumeGroupManager.getVolumeSync / getMaxVolumeSync
+ *
+ * 播放状态由外部调用 setActive() 传入（来自 AVPlayer 状态回调），
+ * 避免依赖 getCurrentAudioRendererInfoArray 的异步返回值。
  *
  * 调用方（UI）只需要：
- *   1) start(cb)                 —— 启动取样回路，cb 中拿 levels[]
+ *   1) start(opts, cb)           —— 启动取样回路，cb 中拿 levels[]
  *   2) setActive(playing)        —— 播放/暂停时通知，让波形进入活跃/静默
- *   3) stop()                    —— 释放监听与定时器
+ *   3) stop()                    —— 释放定时器
  */
 export interface VisualizerOptions {
   bars: number;                // 柱条数量
@@ -24,8 +27,6 @@ export interface VisualizerOptions {
 export type VisualizerCallback = (levels: number[], active: boolean) => void;
 
 export class AudioVisualizer {
-  private streamMgr: audio.AudioStreamManager | null = null;
-  private volumeMgr: audio.AudioVolumeGroupManager | null = null;
   private timer: number = -1;
   private phase: number = 0;
   private active: boolean = false;
@@ -33,39 +34,24 @@ export class AudioVisualizer {
   private cb: VisualizerCallback | null = null;
   /** 来自系统的 0..1 实时音量（媒体流） */
   private systemVolume: number = 0.6;
-  /** 来自系统的 renderer 是否处于 RUNNING 状态 */
-  private systemRunning: boolean = false;
 
   async start(opts: VisualizerOptions, cb: VisualizerCallback): Promise<void> {
     this.opts = opts;
     this.cb = cb;
 
+    // 获取系统媒体音量作为波形振幅基准
     try {
       const mgr = audio.getAudioManager();
-      this.streamMgr = mgr.getStreamManager();
-
-      // 订阅 renderer 状态变化：音频是否真的在输出
-      this.streamMgr.on('audioRendererChange', (infoArray: audio.AudioRendererChangeInfo[]) => {
-        let anyRunning = false;
-        for (const info of infoArray) {
-          if (info.rendererState === audio.AudioState.STATE_RUNNING) {
-            anyRunning = true;
-            break;
-          }
-        }
-        this.systemRunning = anyRunning;
-      });
-
-      // 音量管理：读取当前媒体音量作为波形基准振幅
-      const vgm = await mgr.getVolumeManager().getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
-      this.volumeMgr = vgm;
-      await this.refreshVolume();
-      vgm.on('volumeChange', () => {
-        this.refreshVolume();
-      });
+      const volMgr = mgr.getVolumeManager();
+      const groupMgr = volMgr.getVolumeGroupManagerSync(audio.DEFAULT_VOLUME_GROUP_ID);
+      const v = groupMgr.getVolumeSync(audio.AudioVolumeType.MEDIA);
+      const max = groupMgr.getMaxVolumeSync(audio.AudioVolumeType.MEDIA);
+      if (max > 0) {
+        this.systemVolume = Math.min(1, Math.max(0.15, v / max));
+      }
     } catch (e) {
-      hilog.warn(0x0000, TAG, `native audio api unavailable, fallback to synthetic: ${JSON.stringify(e)}`);
-      // 即便鸿蒙原生 API 不可用，也要继续用合成波形，保证 UI 有反馈
+      hilog.warn(0x0000, TAG, `getVolume fallback to default: ${JSON.stringify(e)}`);
+      // 使用默认值 0.6
     }
 
     // 启动采样回路
@@ -81,39 +67,15 @@ export class AudioVisualizer {
       clearInterval(this.timer);
       this.timer = -1;
     }
-    try {
-      this.streamMgr?.off('audioRendererChange');
-    } catch (_e) {
-      // ignore
-    }
-    try {
-      this.volumeMgr?.off('volumeChange');
-    } catch (_e) {
-      // ignore
-    }
-    this.streamMgr = null;
-    this.volumeMgr = null;
     this.cb = null;
-  }
-
-  private async refreshVolume(): Promise<void> {
-    if (!this.volumeMgr) return;
-    try {
-      const v = await this.volumeMgr.getVolume(audio.AudioVolumeType.MEDIA);
-      const max = await this.volumeMgr.getMaxVolume(audio.AudioVolumeType.MEDIA);
-      if (max > 0) {
-        this.systemVolume = Math.min(1, Math.max(0.15, v / max));
-      }
-    } catch (e) {
-      hilog.warn(0x0000, TAG, `getVolume failed: ${JSON.stringify(e)}`);
-    }
   }
 
   /**
    * 每一个采样 tick：生成 bars 个 [0,1] 的值。
-   * - active 为 true 且系统 renderer 在跑：正常钟形波
-   * - active 为 true 但系统未 running：半振幅暖场
-   * - active 为 false：极低静默线
+   * - active 为 true：正常钟形波（振幅与系统音量正相关），模拟真实音频律动
+   * - active 为 false：极低静默线（几乎为 0）
+   *
+   * 优化：增加更多频率分量和随机性，让音波看起来更贴近真实 m3u8 音频播放效果
    */
   private tick(): void {
     if (!this.cb) return;
@@ -123,18 +85,27 @@ export class AudioVisualizer {
     const center = (N - 1) / 2;
     const levels: number[] = new Array(N);
 
-    const baseGain = this.active ? (this.systemRunning ? 1.0 : 0.55) : 0.08;
+    const baseGain = this.active ? 1.0 : 0.05;
     const volumeGain = 0.5 + this.systemVolume * 0.7;
 
     for (let i = 0; i < N; i++) {
       const x = (i - center) / center;            // -1..1
-      const envelope = Math.exp(-x * x * 2.2);    // 中间高两边低
-      const lo = Math.sin(this.phase * 0.7 + i * 0.25) * 0.35;
-      const mid = Math.sin(this.phase * 1.4 + i * 0.55) * 0.45;
-      const beat = this.active ? (Math.random() * 0.2 - 0.1) : 0;
-      const v = Math.abs(lo + mid + beat) * envelope * baseGain * volumeGain;
-      levels[i] = Math.max(0.06, Math.min(1, 0.12 + v * 1.35));
+      const envelope = Math.exp(-x * x * 2.2);    // 中间高两边低（钟形）
+
+      if (this.active) {
+        // 多频率叠加：模拟真实音频频谱的动态变化
+        const lo = Math.sin(this.phase * 0.6 + i * 0.2) * 0.30;
+        const mid = Math.sin(this.phase * 1.3 + i * 0.5) * 0.40;
+        const hi = Math.sin(this.phase * 2.1 + i * 0.9) * 0.20;
+        const beat = (Math.random() * 0.25 - 0.125);  // 随机微扰模拟节奏
+        const v = Math.abs(lo + mid + hi + beat) * envelope * baseGain * volumeGain;
+        levels[i] = Math.max(0.08, Math.min(1, 0.15 + v * 1.4));
+      } else {
+        // 静默状态：极低但不完全为 0，保持微弱呼吸感
+        const breath = Math.sin(this.phase * 0.2 + i * 0.3) * 0.02;
+        levels[i] = Math.max(0.04, 0.06 + breath) * envelope;
+      }
     }
-    this.cb(levels, this.active && this.systemRunning);
+    this.cb(levels, this.active);
   }
 }

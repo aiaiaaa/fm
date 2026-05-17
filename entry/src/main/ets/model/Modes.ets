@@ -28,8 +28,8 @@ export const MODES: ModesMap = {
     tag: 'AGENT · 新闻资讯',
     subtitle: 'AGENT实时广播',
     desc: '新闻 · 深度 · 文化',
-    accent: '#2EE89D',
-    accentSecond: '#00F2FE',
+    accent: '#52FFA1',
+    accentSecond: '#00D2FF',
     bgFrom: '#0E1726',
     bgTo: '#0A1020',
     url: 'https://ngcdn001.cnr.cn/live/zgzs/index.m3u8'

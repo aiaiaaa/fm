@@ -1,8 +1,8 @@
-import media from '@ohos.multimedia.media';
-import audio from '@ohos.multimedia.audio';
-import avSession from '@ohos.multimedia.avsession';
-import hilog from '@ohos.hilog';
-import common from '@ohos.app.ability.common';
+import { media } from '@kit.MediaKit';
+import { audio } from '@kit.AudioKit';
+import { avSession } from '@kit.AVSessionKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
 
 const TAG = 'RadioPlayer';
 
@@ -179,11 +179,12 @@ export class RadioPlayer {
     }
     try {
       this.currentUrl = url;
-      const prev = this.state;
       this.setState('loading');
-      // 如果当前不是 idle 状态，则先 reset 再重新赋 url
-      if (prev !== 'idle' && prev !== 'error') {
+      // AVPlayer 必须在 idle 状态才能设置 url，总是先尝试 reset
+      try {
         await this.player.reset();
+      } catch (_e) {
+        // 首次 create 后已是 idle，reset 可能报错，忽略即可
       }
       this.player.url = url;
     } catch (e) {

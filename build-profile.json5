@@ -1,11 +1,25 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "test",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "/Users/xthon/Downloads/xfm.p12",
+          "storePassword": "00000019CC2AD4946B49943EC3E1584397F0D7D6FD0E196C107394C7033915093A3C1DDDBA060D3393",
+          "keyAlias": "xfm",
+          "keyPassword": "0000001949AB97F80885636E633926141B602576A005EE1A3E23E08BF3980177FEF6190D0FCEFA02F9",
+          "signAlg": "SHA256withECDSA",
+          "profile": "/Users/xthon/Downloads/xfmRelease (1).p7b",
+          "certpath": "/Users/xthon/Downloads/xfm.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
-        "compatibleSdkVersion": "6.0.0(20)",
+        "signingConfig": "test",
+        "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "targetSdkVersion": "6.1.0(23)"
       }

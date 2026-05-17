@@ -1,31 +1,31 @@
 /**
- * Canvas 版流星场 —— 替代原先用 animateTo 叠位移实现的 Meteor。
- *
- * 特性：
- *   - 使用 RenderingContext 每帧重绘，支持真正平滑的渐变尾迹
- *   - 每颗流星生命周期独立（随机出生点、速度、长度、颜色）
- *   - 自适应父容器尺寸（onAreaChange）
- *   - 低性能占用：~60fps 但每帧只做少量绘制
+ * 优化版流星场：向右下偏上划过
+ * 视觉规格：
+ * - 方向：约 30°-45°（左上往右下）
+ * - 性能：减少 shadow 重绘频次
+ * - 效果：更平滑的尾迹与发光头
  */
+
 interface Meteor {
   x: number;
   y: number;
   vx: number;
   vy: number;
   len: number;
-  life: number;      // 0..1 归一化生命
-  ttl: number;       // 总寿命 ms
-  elapsed: number;   // 已消耗 ms
+  life: number;
+  ttl: number;
+  elapsed: number;
   colorMain: string;
   colorTail: string;
   width: number;
+  angle: number; // 记录角度用于渲染旋转
 }
 
 @Component
 export struct MeteorField {
-  @Prop accent: string = '#2EE89D';
-  @Prop accentSecond: string = '#9FFFD8';
-  @Prop density: number = 5;       // 同屏最大流星数
+  @Prop accent: string = '#52FFA1';
+  @Prop accentSecond: string = '#00D2FF';
+  @Prop density: number = 3;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -47,28 +47,42 @@ export struct MeteorField {
   }
 
   private spawn(): void {
-    // 从顶部靠右的区域出生，向左下方飞
-    const startX = this.areaW * (0.35 + Math.random() * 0.6);
-    const startY = -20 - Math.random() * this.areaH * 0.1;
-    const speed = 0.18 + Math.random() * 0.12;      // 像素/ms
-    const angle = (160 + Math.random() * 15) * Math.PI / 180; // 左下方向
-    const vx = Math.cos(angle) * speed;
-    const vy = Math.sin(angle) * speed;
-    const ttl = 1400 + Math.random() * 1200;
-    const len = 60 + Math.random() * 80;
-    const useSecond = Math.random() < 0.4;
+    // 角度：30度到45度之间（0度是水平向右，增加角度则向下偏）
+    // "向右下偏上" 意味着角度较小，更接近水平
+    const angleDeg = 30 + Math.random() * 15;
+    const angleRad = angleDeg * Math.PI / 180;
+
+    // 出生点优化：为了向右下划，流星应从左侧边缘或顶部边缘出生
+    let startX: number;
+    let startY: number;
+
+    if (Math.random() > 0.5) {
+      // 顶部出生（偏左侧）
+      startX = Math.random() * this.areaW * 0.4 - 50;
+      startY = -50;
+    } else {
+      // 左侧出生（偏上方）
+      startX = -50;
+      startY = Math.random() * this.areaH * 0.4 - 50;
+    }
+
+    const speed = 0.12 + Math.random() * 0.08; // 稍微提升一点速度，增加动感
+    const ttl = 2500 + Math.random() * 2500;
+    const len = 60 + Math.random() * 40; // 增长尾迹
+
     this.meteors.push({
       x: startX,
       y: startY,
-      vx,
-      vy,
-      len,
+      vx: Math.cos(angleRad) * speed,
+      vy: Math.sin(angleRad) * speed,
+      len: len,
       life: 0,
-      ttl,
+      ttl: ttl,
       elapsed: 0,
-      colorMain: useSecond ? this.accentSecond : this.accent,
-      colorTail: useSecond ? this.accentSecond : this.accent,
-      width: 1.2 + Math.random() * 0.8
+      colorMain: this.accent,
+      colorTail: this.accent,
+      width: 1.2,
+      angle: angleRad
     });
   }
 
@@ -78,17 +92,16 @@ export struct MeteorField {
     const dt = this.lastTs === 0 ? 16 : Math.min(64, ts - this.lastTs);
     this.lastTs = ts;
 
-    // 出生节流
     this.spawnCooldown -= dt;
     if (this.spawnCooldown <= 0 && this.meteors.length < this.density) {
       this.spawn();
-      this.spawnCooldown = 600 + Math.random() * 800;
+      this.spawnCooldown = 2000 + Math.random() * 3000;
     }
 
     const ctx = this.context;
+    // 使用 clearRect 清除，确保透明背景
     ctx.clearRect(0, 0, this.areaW, this.areaH);
 
-    // 更新并绘制
     const next: Meteor[] = [];
     for (const m of this.meteors) {
       m.elapsed += dt;
@@ -96,29 +109,25 @@ export struct MeteorField {
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
-      if (m.life >= 1 || m.x < -m.len || m.y > this.areaH + m.len) {
+      // 边界检查：出右侧或底部则消失
+      if (m.life >= 1 || m.x > this.areaW + m.len || m.y > this.areaH + m.len) {
         continue;
       }
 
-      // 尾部点（和运动方向相反）
-      const dir = Math.atan2(m.vy, m.vx);
-      const tailX = m.x - Math.cos(dir) * m.len;
-      const tailY = m.y - Math.sin(dir) * m.len;
+      // 计算尾部坐标
+      const tailX = m.x - Math.cos(m.angle) * m.len;
+      const tailY = m.y - Math.sin(m.angle) * m.len;
 
-      // 淡入淡出：前 15% 淡入，后 30% 淡出
+      // 透明度处理
       let alpha = 1;
-      if (m.life < 0.15) {
-        alpha = m.life / 0.15;
-      } else if (m.life > 0.7) {
-        alpha = 1 - (m.life - 0.7) / 0.3;
-      }
-      alpha = Math.max(0, Math.min(1, alpha));
+      if (m.life < 0.15) alpha = m.life / 0.15; // 淡入
+      else if (m.life > 0.7) alpha = 1 - (m.life - 0.7) / 0.3; // 淡出
 
-      // 线条尾巴：渐变从透明 → 主色
+      // 1. 绘制尾迹
+      ctx.save();
       const grad = ctx.createLinearGradient(tailX, tailY, m.x, m.y);
-      grad.addColorStop(0, '#00000000');
-      grad.addColorStop(0.6, this.hexWithAlpha(m.colorTail, alpha * 0.55));
-      grad.addColorStop(1, this.hexWithAlpha(m.colorMain, alpha));
+      grad.addColorStop(0, this.hexWithAlpha(m.colorTail, 0));
+      grad.addColorStop(1, this.hexWithAlpha(m.colorMain, alpha * 0.8));
 
       ctx.lineWidth = m.width;
       ctx.lineCap = 'round';
@@ -127,42 +136,39 @@ export struct MeteorField {
       ctx.moveTo(tailX, tailY);
       ctx.lineTo(m.x, m.y);
       ctx.stroke();
+      ctx.restore();
 
-      // 头部亮点
-      ctx.beginPath();
+      // 2. 绘制头部亮点（双重 Glow 优化）
+      ctx.save();
+      const headSize = 1.2 + (1 - m.life) * 1.5; // 头部随时间稍微变小
+
+      // 合并 Glow 效果
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = this.accent;
       ctx.fillStyle = this.hexWithAlpha('#FFFFFF', alpha);
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = m.colorMain;
-      ctx.arc(m.x, m.y, m.width * 1.4, 0, Math.PI * 2);
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, headSize, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
+
+      // 叠加第二层偏蓝的光晕
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = this.accentSecond;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, headSize * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
 
       next.push(m);
     }
     this.meteors = next;
   }
 
+  // 辅助函数：颜色处理
   private hexWithAlpha(hex: string, alpha: number): string {
-    // 支持 #RRGGBB 或 #AARRGGBB（鸿蒙风格），统一转为 #RRGGBBAA
-    let r = 255;
-    let g = 255;
-    let b = 255;
-    if (hex.length === 7) {
-      r = parseInt(hex.substring(1, 3), 16);
-      g = parseInt(hex.substring(3, 5), 16);
-      b = parseInt(hex.substring(5, 7), 16);
-    } else if (hex.length === 9) {
-      // #AARRGGBB
-      r = parseInt(hex.substring(3, 5), 16);
-      g = parseInt(hex.substring(5, 7), 16);
-      b = parseInt(hex.substring(7, 9), 16);
-    }
-    const a = Math.max(0, Math.min(255, Math.round(alpha * 255)));
-    const toHex = (n: number): string => {
-      const s = n.toString(16);
-      return s.length === 1 ? `0${s}` : s;
-    };
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}${toHex(a)}`;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   build() {
@@ -170,7 +176,6 @@ export struct MeteorField {
       .width('100%')
       .height('100%')
       .onReady(() => {
-        // 初次渲染
         this.lastTs = 0;
         this.loop();
       })
@@ -182,9 +187,9 @@ export struct MeteorField {
 
   private loop(): void {
     if (!this.running) return;
-    const now = Date.now();
-    this.step(now);
-    // 下一帧
-    setTimeout(() => this.loop(), 16);
+    this.step(Date.now());
+    // 鸿蒙环境下，建议使用 requestAnimationFrame
+    // 若在较低版本中使用，可保留 setTimeout
+    setTimeout(() => this.loop(), 30);
   }
 }
