@@ -1,5 +1,6 @@
 import { window } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { ListeningStats } from '../services/ListeningStats';
 
@@ -336,7 +337,7 @@ export struct ProfilePage {
           Column() {
             this.MenuRow('\uD83D\uDCAC', '意见反馈', () => {})
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
-            this.MenuRow('\u2699', '设置', () => {})
+            this.MenuRow('\u2699', '设置', () => { router.pushUrl({ url: 'pages/SettingsPage' }); })
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
             this.MenuRow('\u24D8', '关于我们', () => { this.showAboutDialog(); })
           }
