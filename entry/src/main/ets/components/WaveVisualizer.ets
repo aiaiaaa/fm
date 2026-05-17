@@ -26,12 +26,13 @@ export struct WaveVisualizer {
     if (this.streamUrl) {
       this.visualizer.attachStream(this.streamUrl);
     }
-    // native pacer 在 ring 空时会跳过 tick（不再重发 stale frame），
-    // 所以 UI 这边收到的是"有数据时的连续帧 + 偶尔的间隔"。给 ArkUI
-    // 一个短动画用来在帧间补间，比直接赋值看起来自然得多；曲线选
-    // EaseOut 让上升快、收尾柔和，比 Linear 视觉上更有"弹性"。
+    // native pacer 在 ring 空时不再 freeze —— 它会按 23ms 节拍把最后一帧
+    // 指数衰减到 0 再停止发送，所以 UI 这边收到的是连续平滑的帧流。
+    // 给 ArkUI 一个短动画用来在 23ms 帧间补间。曲线选 EaseOut 让上升快、
+    // 收尾柔和；时长 60ms 接近两帧节拍，避免上一段动画还没跑完就被下一帧
+    // 覆盖造成的"锯齿停顿感"（80ms 时这个效应肉眼可见）。
     this.visualizer.start((bands: number[]) => {
-      animateTo({ duration: 80, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 60, curve: Curve.EaseOut }, () => {
         this.levels = bands;
       });
     });
