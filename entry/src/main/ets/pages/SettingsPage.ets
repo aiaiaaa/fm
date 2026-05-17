@@ -52,12 +52,12 @@ struct SettingsPage {
       Column() {
         // ======== 顶部导航栏（带阴影"帽子"） ========
         Row() {
-          Text('<')
-            .fontSize(20)
+          Text('\u2039')
+            .fontSize(32)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
             .onClick(() => { router.back(); })
-            .padding({ right: 8, top: 4, bottom: 4 })
+            .padding({ right: 8, top: 0, bottom: 0 })
 
           Text('设置')
             .fontSize(18)
@@ -161,7 +161,7 @@ struct SettingsPage {
           Text('选择语言')
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#1A1A1A')
+            .fontColor('#FFFFFF')
             .margin({ bottom: 20 })
 
           // 中文选项
@@ -175,7 +175,7 @@ struct SettingsPage {
 
             Text('中文')
               .fontSize(15)
-              .fontColor('#1A1A1A')
+              .fontColor('#FFFFFF')
               .margin({ left: 12 })
           }
           .width('100%')
@@ -194,7 +194,7 @@ struct SettingsPage {
 
             Text('English')
               .fontSize(15)
-              .fontColor('#1A1A1A')
+              .fontColor('#FFFFFF')
               .margin({ left: 12 })
           }
           .width('100%')
@@ -214,7 +214,7 @@ struct SettingsPage {
         .width('70%')
         .padding({ top: 24, bottom: 20, left: 24, right: 24 })
         .borderRadius(16)
-        .backgroundColor('#E8EAED')
+        .backgroundColor('#2A2E38')
         .shadow({ radius: 20, color: '#40000000', offsetX: 0, offsetY: 8 })
         .position({ x: '15%', y: '35%' })
       }
