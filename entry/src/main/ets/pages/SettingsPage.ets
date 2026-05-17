@@ -57,16 +57,16 @@ struct SettingsPage {
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
             .onClick(() => { router.back(); })
-            .padding({ right: 8, top: 0, bottom: 0 })
+            .padding({ right: 6 })
 
           Text('设置')
             .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor('#FFFFFF')
-            .margin({ left: 4 })
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: this.statusBarHeight + 14, bottom: 14 })
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: 18, right: 20, top: this.statusBarHeight + 14, bottom: 14 })
         .backgroundColor('#0E1420')
         .shadow({ radius: 12, color: '#40000000', offsetX: 0, offsetY: 4 })
 
@@ -100,16 +100,17 @@ struct SettingsPage {
             .backgroundColor('#0AFFFFFF')
             .alignSelf(ItemAlign.End)
 
-          // 版本号
+          // 屏幕常亮
           Row() {
-            Text('版本号')
+            Text('屏幕常亮')
               .fontSize(15)
               .fontColor('#DDFFFFFF')
               .layoutWeight(1)
 
-            Text('1.0.0')
-              .fontSize(14)
-              .fontColor('#5E6678')
+            Toggle({ type: ToggleType.Switch, isOn: this.keepScreenOn })
+              .selectedColor('#52FFA1')
+              .switchPointColor('#0A0F1A')
+              .onChange((isOn: boolean) => this.toggleScreenOn(isOn))
           }
           .width('100%')
           .height(56)
@@ -122,17 +123,16 @@ struct SettingsPage {
             .backgroundColor('#0AFFFFFF')
             .alignSelf(ItemAlign.End)
 
-          // 屏幕常亮
+          // 版本号
           Row() {
-            Text('屏幕常亮')
+            Text('版本号')
               .fontSize(15)
               .fontColor('#DDFFFFFF')
               .layoutWeight(1)
 
-            Toggle({ type: ToggleType.Switch, isOn: this.keepScreenOn })
-              .selectedColor('#52FFA1')
-              .switchPointColor('#0A0F1A')
-              .onChange((isOn: boolean) => this.toggleScreenOn(isOn))
+            Text('1.0.0')
+              .fontSize(14)
+              .fontColor('#5E6678')
           }
           .width('100%')
           .height(56)
