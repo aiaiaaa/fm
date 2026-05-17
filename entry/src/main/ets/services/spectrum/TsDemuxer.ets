@@ -11,6 +11,9 @@
  * 输出方式：feed(chunk) 喂 chunk，回调返回切好的 ADTS 帧（含完整 ADTS header）。
  */
 
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+const DTAG = 'TsDemuxer';
 const TS_PACKET_SIZE = 188;
 const SYNC_BYTE = 0x47;
 
@@ -30,6 +33,18 @@ export class TsDemuxer {
   // PES 累积（一个 PES 可以横跨多个 TS 包）
   private pesBuffer: Uint8Array = new Uint8Array(0);
   private pesActive: boolean = false;
+
+  // 诊断计数：用来定位 demuxer 卡在哪一步
+  private nPacketsTotal: number = 0;
+  private nPidPat: number = 0;
+  private nPidPmt: number = 0;
+  private nPidAudio: number = 0;
+  private nAdtsEmitted: number = 0;
+  private patSeen: boolean = false;
+  private pmtSeen: boolean = false;
+  private firstPesParsed: boolean = false;
+  private firstPidsLogged: boolean = false;
+  private seenPids: Set<number> = new Set<number>();
 
   constructor(sink: AdtsFrameSink) {
     this.onFrame = sink;
@@ -81,6 +96,18 @@ export class TsDemuxer {
       off += TS_PACKET_SIZE;
     }
     this.leftover = buf.subarray(off);
+
+    // 喂完一个 chunk 打一次诊断快照（前 3 次最有用）
+    if (!this.firstPidsLogged && this.nPacketsTotal > 0) {
+      this.firstPidsLogged = true;
+      const pidList: string[] = [];
+      this.seenPids.forEach((pid) => pidList.push('0x' + pid.toString(16)));
+      hilog.warn(0x0000, DTAG,
+        `chunk done: pkts=${this.nPacketsTotal} patSeen=${this.patSeen} pmtPid=${this.pmtPid} audioPid=${this.audioPid} audioType=0x${this.audioStreamType.toString(16)} adts=${this.nAdtsEmitted} pids=[${pidList.join(',')}]`);
+    } else {
+      hilog.warn(0x0000, DTAG,
+        `chunk done: pkts=${this.nPacketsTotal} patSeen=${this.patSeen} pmtSeen=${this.pmtSeen} audioPid=${this.audioPid} adts=${this.nAdtsEmitted}`);
+    }
   }
 
   /**
@@ -95,10 +122,12 @@ export class TsDemuxer {
   }
 
   private handlePacket(pkt: Uint8Array): void {
+    this.nPacketsTotal++;
     // 头部 4 字节
     // bit 23 = payload_unit_start_indicator
     const payloadStart = (pkt[1] & 0x40) !== 0;
     const pid = ((pkt[1] & 0x1F) << 8) | pkt[2];
+    if (this.seenPids.size < 16) this.seenPids.add(pid);
     const adaptationFieldControl = (pkt[3] >> 4) & 0x3;
 
     let payloadOffset = 4;
@@ -116,14 +145,17 @@ export class TsDemuxer {
     const payload = pkt.subarray(payloadOffset);
 
     if (pid === 0x0000) {
+      this.nPidPat++;
       this.parsePat(payload, payloadStart);
       return;
     }
     if (this.pmtPid >= 0 && pid === this.pmtPid) {
+      this.nPidPmt++;
       this.parsePmt(payload, payloadStart);
       return;
     }
     if (this.audioPid >= 0 && pid === this.audioPid) {
+      this.nPidAudio++;
       this.collectPes(payload, payloadStart);
       return;
     }
@@ -148,6 +180,8 @@ export class TsDemuxer {
       const pid = ((payload[p + 2] & 0x1F) << 8) | payload[p + 3];
       if (programNumber !== 0) {
         this.pmtPid = pid;
+        this.patSeen = true;
+        hilog.warn(0x0000, DTAG, `PAT: program=${programNumber} pmtPid=0x${pid.toString(16)}`);
         return;
       }
     }
@@ -173,10 +207,12 @@ export class TsDemuxer {
       const elementaryPid = ((payload[p + 1] & 0x1F) << 8) | payload[p + 2];
       const esInfoLen = ((payload[p + 3] & 0x0F) << 8) | payload[p + 4];
 
+      hilog.warn(0x0000, DTAG, `PMT entry: streamType=0x${streamType.toString(16)} pid=0x${elementaryPid.toString(16)}`);
       // 0x0F = AAC ADTS, 0x11 = AAC LATM
       if (streamType === 0x0F || streamType === 0x11) {
         this.audioPid = elementaryPid;
         this.audioStreamType = streamType;
+        this.pmtSeen = true;
       }
       p += 5 + esInfoLen;
     }
@@ -211,6 +247,15 @@ export class TsDemuxer {
     if (dataOffset >= pes.length) return;
 
     const data = pes.subarray(dataOffset);
+    if (!this.firstPesParsed) {
+      this.firstPesParsed = true;
+      const head: string[] = [];
+      for (let k = 0; k < Math.min(8, data.length); k++) {
+        head.push(data[k].toString(16).padStart(2, '0'));
+      }
+      hilog.warn(0x0000, DTAG,
+        `first PES: streamId=0x${pes[3].toString(16)} payload size=${data.length} head=${head.join(' ')} (audioType=0x${this.audioStreamType.toString(16)})`);
+    }
     if (this.audioStreamType === 0x0F) {
       this.splitAdts(data);
     }
@@ -238,6 +283,7 @@ export class TsDemuxer {
         break;
       }
       this.onFrame(data.subarray(i, i + frameLen));
+      this.nAdtsEmitted++;
       i += frameLen;
     }
   }
