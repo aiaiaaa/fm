@@ -36,6 +36,7 @@ export class HlsAacTap {
   private active: boolean = false;
 
   private demuxer: TsDemuxer | null = null;
+  private firstSegmentLogged: boolean = false;
 
   private playlistTimer: number = -1;
   private downloadedSeqs: Set<number> = new Set<number>();
@@ -125,10 +126,13 @@ export class HlsAacTap {
 
     // master playlist：换成第一条变种
     if (info.variantUrl) {
+      hilog.warn(0x0000, TAG, `master playlist redirect -> ${info.variantUrl}`);
       this.currentPlaylistUrl = info.variantUrl;
       this.scheduleNextPlaylistFetch(0);
       return;
     }
+
+    hilog.warn(0x0000, TAG, `playlist parsed: ${info.segments.length} segments, target=${info.targetDurationSec}s`);
 
     // 首次只取末尾 2 段
     const isFirst = this.downloadedSeqs.size === 0;
@@ -157,8 +161,19 @@ export class HlsAacTap {
         const seg = this.segmentQueue.shift()!;
         try {
           const bin = await this.httpGetBinary(seg.url);
+          const buf = new Uint8Array(bin);
+          // Dump the first segment's first 16 bytes + size — diagnostic for "is this really TS?"
+          // TS starts with sync byte 0x47; fMP4 starts with size + 'styp'/'moof'; raw AAC ADTS starts with 0xFF 0xFx.
+          if (!this.firstSegmentLogged) {
+            this.firstSegmentLogged = true;
+            const head: string[] = [];
+            for (let i = 0; i < Math.min(16, buf.length); i++) {
+              head.push(buf[i].toString(16).padStart(2, '0'));
+            }
+            hilog.warn(0x0000, TAG, `first segment ${seg.url.substring(seg.url.lastIndexOf('/') + 1)} size=${buf.length} head=${head.join(' ')}`);
+          }
           if (this.demuxer) {
-            this.demuxer.feed(new Uint8Array(bin));
+            this.demuxer.feed(buf);
           }
           this.consecutiveErrors = 0;
         } catch (e) {

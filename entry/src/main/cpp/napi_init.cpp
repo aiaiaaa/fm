@@ -145,7 +145,7 @@ napi_value Create(napi_env env, napi_callback_info info) {
     inst->analyzer = std::make_unique<xfm::SpectrumAnalyzer>([tsfn](const std::vector<float>& bands) {
         uint32_t emitted = ++g_bands_emitted;
         if (emitted == 1 || emitted == 10 || (emitted % 100) == 0) {
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "xfm_napi",
+            OH_LOG_Print(LOG_APP, LOG_WARN, 0x0000, "xfm_napi",
                 "bands emitted: total=%u (b0=%.2f b8=%.2f b15=%.2f)",
                 emitted, bands.empty() ? 0.0f : bands[0],
                 bands.size() > 8 ? bands[8] : 0.0f,
@@ -169,7 +169,7 @@ napi_value Create(napi_env env, napi_callback_info info) {
 
     napi_value result;
     napi_create_uint32(env, handle, &result);
-    LOGI("create -> handle=%u", handle);
+    LOGW("create -> handle=%u (use WARN for diag visibility)", handle);
     return result;
 }
 
@@ -223,13 +223,13 @@ napi_value FeedAdts(napi_env env, napi_callback_info info) {
             return nullptr;
         }
         inst->decoder_inited = true;
-        LOGI("decoder inited from first ADTS: sr=%d ch=%d", hdr.sample_rate, hdr.channels);
+        LOGW("decoder inited from first ADTS: sr=%d ch=%d", hdr.sample_rate, hdr.channels);
     }
 
     inst->decoder->FeedAdts(bytes, length);
     uint32_t fed = ++g_adts_fed;
     if (fed == 1 || fed == 10 || fed == 50 || (fed % 200) == 0) {
-        LOGI("feedAdts stats: total=%u (last frame=%zub)", fed, length);
+        LOGW("feedAdts stats: total=%u (last frame=%zub)", fed, length);
     }
     return nullptr;
 }

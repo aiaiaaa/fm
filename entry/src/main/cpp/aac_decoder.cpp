@@ -88,7 +88,7 @@ bool AacDecoder::Init(int sample_rate, int channels, PcmCallback on_pcm) {
     }
 
     ready_ = true;
-    LOGI("AAC decoder ready @ %dHz x%d", sample_rate, channels);
+    LOGW("AAC decoder ready @ %dHz x%d", sample_rate, channels);
     return true;
 }
 

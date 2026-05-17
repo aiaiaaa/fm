@@ -132,6 +132,7 @@ export class AudioVisualizer {
       });
       this.tap.setActive(this.active);
       hilog.info(0x0000, TAG, `real pipeline started for ${this.streamUrl}`);
+      hilog.warn(0x0000, TAG, `pipeline started, waiting for bands... handle=${this.nativeHandle}`);
     } catch (e) {
       hilog.warn(0x0000, TAG, `start tap failed: ${(e as Error).message}`);
       this.switchToFallback();
