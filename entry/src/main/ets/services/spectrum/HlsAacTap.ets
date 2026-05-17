@@ -1,27 +1,39 @@
 import { http } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { util } from '@kit.ArkTS';
 import { M3u8Parser, PlaylistInfo, Segment } from './M3u8Parser';
 import { TsDemuxer } from './TsDemuxer';
-import { AacDecoder } from './AacDecoder';
-import { PcmFrameSink } from './Types';
 
 const TAG = 'HlsAacTap';
 
 /**
  * HLS 旁路解码管线
  *
- *   m3u8 轮询 ──► segment 队列 ──► HTTP GET TS ──► TsDemuxer ──► AacDecoder ──► PCM
+ *   m3u8 轮询 ──► segment 队列 ──► HTTP GET TS ──► TsDemuxer ──► ADTS 帧大小
  *
- * 与 AVPlayer 完全独立：第二份网络拉取、第二份解码，不出声只产 PCM。
+ * 与 AVPlayer 完全独立：第二份网络拉取，不出声只解封装。
  *
  * 直播策略：
  *   - 启动时只取 playlist 末尾 2 段开始解，避免一上来就追历史
  *   - playlist 每 targetDuration*0.5 秒刷新一次，新的 segment 入队
  *   - 同一 sequence 不重复下载
- *   - 出错连续 3 次 → 停止上报，让上层切到模拟降级
+ *   - 出错连续 3 次 → 上层切到模拟降级
+ *
+ * !!! 关于 PCM !!!
+ *   原计划是接 media.AudioDecoder 拿 PCM 做 FFT，但 HarmonyOS NEXT 的 ArkTS
+ *   层 @kit.MediaKit 没有 AudioDecoder（只有 AudioEncoder），需要走 NDK
+ *   OH_AudioCodec 才能拿到 PCM。这里改为输出每帧 ADTS 编码字节数（≈ 该帧
+ *   的"音频复杂度/能量"代理量），交给 BandSynthesizer 合成 16 频段振幅。
+ *   有声音时柱条会真实律动，安静时贴底，比纯模拟更准。
  */
+export type FrameEnergySink = (frameBytes: number) => void;
+
+interface HttpHeaders {
+  Accept: string;
+}
+
 export class HlsAacTap {
-  private readonly sink: PcmFrameSink;
+  private readonly sink: FrameEnergySink;
 
   private playlistUrl: string = '';
   private currentPlaylistUrl: string = '';
@@ -29,8 +41,6 @@ export class HlsAacTap {
   private active: boolean = false;
 
   private demuxer: TsDemuxer | null = null;
-  private decoder: AacDecoder | null = null;
-  private decoderReady: boolean = false;
 
   private playlistTimer: number = -1;
   private downloadedSeqs: Set<number> = new Set<number>();
@@ -39,10 +49,12 @@ export class HlsAacTap {
   private consecutiveErrors: number = 0;
   private onFatalError: (() => void) | null = null;
 
-  // 第一帧 ADTS 用来探测真实采样率/声道
-  private decoderInitFromAdts: boolean = false;
+  // 节流：同一段 TS 解出来可能有几百帧 ADTS，UI 只需要 ~30fps
+  private lastEmitTs: number = 0;
+  private accumBytes: number = 0;
+  private accumCount: number = 0;
 
-  constructor(sink: PcmFrameSink) {
+  constructor(sink: FrameEnergySink) {
     this.sink = sink;
   }
 
@@ -68,10 +80,7 @@ export class HlsAacTap {
     this.downloadedSeqs.clear();
     this.segmentQueue = [];
 
-    this.demuxer = new TsDemuxer((adts) => this.onAdtsFrame(adts));
-    this.decoder = new AacDecoder((pcm) => {
-      if (this.active) this.sink(pcm);
-    });
+    this.demuxer = new TsDemuxer((adts: Uint8Array) => this.onAdtsFrame(adts));
 
     // 立即拉一次 playlist；之后定时刷新
     await this.refreshPlaylist();
@@ -86,15 +95,10 @@ export class HlsAacTap {
     }
     this.demuxer?.flush();
     this.demuxer = null;
-    if (this.decoder) {
-      const d = this.decoder;
-      this.decoder = null;
-      this.decoderReady = false;
-      this.decoderInitFromAdts = false;
-      await d.release();
-    }
     this.segmentQueue = [];
     this.downloadedSeqs.clear();
+    this.accumBytes = 0;
+    this.accumCount = 0;
   }
 
   private scheduleNextPlaylistFetch(ms: number): void {
@@ -142,7 +146,8 @@ export class HlsAacTap {
     const isFirst = this.downloadedSeqs.size === 0;
     const segs = isFirst ? info.segments.slice(-2) : info.segments;
 
-    for (const seg of segs) {
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
       if (!this.downloadedSeqs.has(seg.sequence)) {
         this.downloadedSeqs.add(seg.sequence);
         this.segmentQueue.push(seg);
@@ -185,71 +190,54 @@ export class HlsAacTap {
     }
   }
 
-  private onAdtsFrame(adts: Uint8Array): void {
-    if (!this.decoder) return;
-
-    if (!this.decoderReady) {
-      // 从第一帧 ADTS 头解析采样率/声道，用于初始化解码器
-      const parsed = HlsAacTap.parseAdtsHeader(adts);
-      if (!parsed) return;
-      const dec = this.decoder;
-      this.decoderInitFromAdts = true;
-      dec.init(parsed.sampleRate, parsed.channels).then((ok: boolean) => {
-        this.decoderReady = ok;
-        if (!ok) {
-          hilog.error(0x0000, TAG, 'AacDecoder init failed, falling back');
-          this.onFatalError?.();
-          return;
-        }
-        // init 完成后再喂这一帧
-        dec.feed(adts);
-      }).catch(() => {
-        this.onFatalError?.();
-      });
-      return;
-    }
-
-    this.decoder.feed(adts);
-  }
-
   /**
-   * 解析 ADTS 头取采样率 + 声道数
-   *   header 7 字节固定（无 CRC）
-   *   sampling_frequency_index = bits 18..21
-   *   channel_configuration   = bits 23..25
+   * ADTS 帧入口。这里做"按时间间隔节流"——网络上一段 TS 一次性会塞 100+ 帧，
+   * 但 UI 只需要 ~30fps，所以累积一段时间再 emit 平均值（保留峰值灵敏度）。
+   *
+   * AAC 一帧 = 1024 samples，44.1kHz 下约 23ms，合并 1 帧/40ms 到一次输出。
    */
-  private static parseAdtsHeader(adts: Uint8Array): { sampleRate: number, channels: number } | null {
-    if (adts.length < 7) return null;
-    if (adts[0] !== 0xFF || (adts[1] & 0xF0) !== 0xF0) return null;
-    const sfIndex = (adts[2] >> 2) & 0x0F;
-    const channels = ((adts[2] & 0x01) << 2) | ((adts[3] >> 6) & 0x03);
-    const SR_TABLE: number[] = [
-      96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
-      16000, 12000, 11025, 8000, 7350, 0, 0, 0
-    ];
-    const sr = SR_TABLE[sfIndex];
-    if (sr === 0 || channels === 0) return null;
-    return { sampleRate: sr, channels };
+  private onAdtsFrame(adts: Uint8Array): void {
+    if (!this.active) return;
+
+    this.accumBytes += adts.length;
+    this.accumCount += 1;
+
+    const now = Date.now();
+    if (this.lastEmitTs === 0) {
+      this.lastEmitTs = now;
+    }
+    if (now - this.lastEmitTs >= 40) {
+      // 取窗口内的平均字节数作为这一帧的能量
+      const avg = this.accumBytes / Math.max(1, this.accumCount);
+      this.sink(avg);
+      this.lastEmitTs = now;
+      this.accumBytes = 0;
+      this.accumCount = 0;
+    }
   }
 
   private async httpGetText(url: string): Promise<string> {
     const req = http.createHttp();
     try {
-      const resp = await req.request(url, {
+      const headers: HttpHeaders = { Accept: '*/*' };
+      const options: http.HttpRequestOptions = {
         method: http.RequestMethod.GET,
         connectTimeout: 6000,
         readTimeout: 6000,
-        header: { 'Accept': '*/*' }
-      });
+        header: headers,
+        expectDataType: http.HttpDataType.STRING
+      };
+      const resp = await req.request(url, options);
       if (resp.responseCode !== 200) {
         throw new Error(`HTTP ${resp.responseCode}`);
       }
       const data = resp.result;
       if (typeof data === 'string') return data;
       if (data instanceof ArrayBuffer) {
-        return new TextDecoder().decode(new Uint8Array(data));
+        const decoder = util.TextDecoder.create('utf-8');
+        return decoder.decodeToString(new Uint8Array(data));
       }
-      return String(data);
+      return `${data}`;
     } finally {
       req.destroy();
     }
@@ -258,13 +246,15 @@ export class HlsAacTap {
   private async httpGetBinary(url: string): Promise<ArrayBuffer> {
     const req = http.createHttp();
     try {
-      const resp = await req.request(url, {
+      const headers: HttpHeaders = { Accept: '*/*' };
+      const options: http.HttpRequestOptions = {
         method: http.RequestMethod.GET,
         connectTimeout: 8000,
         readTimeout: 12000,
         expectDataType: http.HttpDataType.ARRAY_BUFFER,
-        header: { 'Accept': '*/*' }
-      });
+        header: headers
+      };
+      const resp = await req.request(url, options);
       if (resp.responseCode !== 200) {
         throw new Error(`HTTP ${resp.responseCode}`);
       }

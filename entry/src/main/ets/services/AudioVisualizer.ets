@@ -1,6 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HlsAacTap } from './spectrum/HlsAacTap';
-import { SpectrumAnalyzer } from './spectrum/SpectrumAnalyzer';
+import { BandSynthesizer } from './spectrum/BandSynthesizer';
 
 const TAG = 'AudioVisualizer';
 const BAND_COUNT = 16;
@@ -8,18 +8,22 @@ const BAND_COUNT = 16;
 /**
  * 音频可视化服务
  *
- * 主路径（"真实"频谱）：
- *   m3u8 ──► HlsAacTap（旁路解码，独立于 AVPlayer）──► PCM
- *           ──► SpectrumAnalyzer（FFT + 16 频段）──► UI
+ * 主路径（数据驱动）：
+ *   m3u8 ──► HlsAacTap（旁路解封装，独立于 AVPlayer）──► ADTS 帧能量
+ *           ──► BandSynthesizer（贝尔形 16 频段合成）──► UI
  *
- * 降级（任何环节失败）：
- *   多频率正弦叠加 + 随机扰动 → 16 频段（保证视觉不至于全静）
+ * 降级（任何环节失败 / 未配置流地址）：
+ *   多频率正弦叠加 + 随机扰动 → 16 频段
  *
  * 调用方式：
- *   vis.attachStream(url)        # 设置当前 m3u8 流
+ *   vis.attachStream(url)
  *   vis.start(cb)
  *   vis.setActive(true | false)
  *   vis.stop()
+ *
+ * 注：完整的真 FFT 频谱需要 PCM，HarmonyOS NEXT 的 ArkTS 层没有 AAC 解码器，
+ * 必须走 NDK OH_AudioCodec。这里用 ADTS 帧字节数作为能量代理量，配合贝尔形
+ * 空间分布合成出与 bbg.fm 视觉接近的频谱效果。
  */
 export type SpectrumCallback = (bands: number[]) => void;
 
@@ -30,16 +34,15 @@ export class AudioVisualizer {
 
   // 真实管线
   private tap: HlsAacTap | null = null;
-  private analyzer: SpectrumAnalyzer | null = null;
-  private tapStartedAt: number = 0;
-  private receivedRealPcm: boolean = false;
+  private synth: BandSynthesizer | null = null;
+  private receivedRealFrame: boolean = false;
   private healthCheckTimer: number = -1;
 
   // 降级管线
   private fallbackActive: boolean = false;
   private fallbackTimer: number = -1;
   private phase: number = 0;
-  private prevBands: number[] = new Array(BAND_COUNT).fill(0);
+  private prevBands: number[] = new Array<number>(BAND_COUNT).fill(0);
 
   /**
    * 设置当前要可视化的流 URL（m3u8）。在 start 之前或之后调用都行。
@@ -56,7 +59,7 @@ export class AudioVisualizer {
   async start(cb: SpectrumCallback): Promise<void> {
     this.callback = cb;
     this.active = false;
-    this.prevBands = new Array(BAND_COUNT).fill(0);
+    this.prevBands = new Array<number>(BAND_COUNT).fill(0);
     if (this.streamUrl) {
       await this.startRealPipeline();
     } else {
@@ -69,11 +72,11 @@ export class AudioVisualizer {
     this.active = playing;
     hilog.info(0x0000, TAG, `setActive: ${playing}`);
     this.tap?.setActive(playing);
+    this.synth?.setActive(playing);
     if (!playing) {
       // 暂停时柔和归零
-      this.prevBands = new Array(BAND_COUNT).fill(0);
-      this.emitBands(new Array(BAND_COUNT).fill(0));
-      this.analyzer?.reset();
+      this.prevBands = new Array<number>(BAND_COUNT).fill(0);
+      this.emitBands(new Array<number>(BAND_COUNT).fill(0));
     }
   }
 
@@ -91,7 +94,7 @@ export class AudioVisualizer {
       this.tap = null;
       await t.stop();
     }
-    this.analyzer = null;
+    this.synth = null;
     this.callback = null;
     this.fallbackActive = false;
   }
@@ -100,16 +103,15 @@ export class AudioVisualizer {
 
   private async startRealPipeline(): Promise<void> {
     this.fallbackActive = false;
-    this.receivedRealPcm = false;
-    this.tapStartedAt = Date.now();
+    this.receivedRealFrame = false;
 
-    this.analyzer = new SpectrumAnalyzer((bands) => {
-      this.receivedRealPcm = true;
+    this.synth = new BandSynthesizer((bands: number[]) => {
+      this.receivedRealFrame = true;
       this.emitBands(bands);
     });
 
-    this.tap = new HlsAacTap((frame) => {
-      this.analyzer?.feed(frame);
+    this.tap = new HlsAacTap((frameBytes: number) => {
+      this.synth?.feedFrame(frameBytes);
     });
 
     try {
@@ -118,6 +120,7 @@ export class AudioVisualizer {
         this.switchToFallback();
       });
       this.tap.setActive(this.active);
+      this.synth.setActive(this.active);
       hilog.info(0x0000, TAG, `real pipeline started for ${this.streamUrl}`);
     } catch (e) {
       hilog.warn(0x0000, TAG, `start tap failed: ${(e as Error).message}`);
@@ -125,10 +128,11 @@ export class AudioVisualizer {
       return;
     }
 
-    // 健康检查：8 秒还没收到一帧真实 PCM 就降级
+    // 健康检查：8 秒还没收到一帧就降级（直播第一段拉取 + TS 解封装通常 3~5 秒）
+    if (this.healthCheckTimer >= 0) clearTimeout(this.healthCheckTimer);
     this.healthCheckTimer = setTimeout(() => {
-      if (!this.receivedRealPcm && !this.fallbackActive) {
-        hilog.warn(0x0000, TAG, 'no real PCM in 8s, switching to fallback');
+      if (!this.receivedRealFrame && !this.fallbackActive) {
+        hilog.warn(0x0000, TAG, 'no real frame in 8s, switching to fallback');
         this.switchToFallback();
       }
     }, 8000);
@@ -158,7 +162,7 @@ export class AudioVisualizer {
       this.tap = null;
       await t.stop();
     }
-    this.analyzer = null;
+    this.synth = null;
     this.startFallback();
   }
 
@@ -206,7 +210,7 @@ export class AudioVisualizer {
 
   private emitBands(bands: number[]): void {
     if (!this.callback) return;
-    // 真实管线已经做了平滑，这里只对 fallback 平滑一下，省一次拷贝
+    // 真实管线已经做了平滑，这里只对 fallback 平滑一下
     const smoothed: number[] = [];
     for (let i = 0; i < BAND_COUNT; i++) {
       const target = bands[i] ?? 0;

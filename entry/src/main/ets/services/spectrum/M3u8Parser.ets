@@ -26,7 +26,7 @@ export class M3u8Parser {
    * @param baseUrl playlist 自身的 URL，用来解析 segment 的相对路径
    */
   static parse(body: string, baseUrl: string): PlaylistInfo {
-    const lines = body.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const lines = body.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
 
     let isMaster = false;
     let variantUrl: string | null = null;
@@ -76,22 +76,24 @@ export class M3u8Parser {
       }
       // 非注释 = segment URL
       if (pendingDuration > 0) {
-        segments.push({
+        const seg: Segment = {
           url: M3u8Parser.resolveUrl(line, baseUrl),
           durationSec: pendingDuration,
           sequence: mediaSequence + segments.length
-        });
+        };
+        segments.push(seg);
         pendingDuration = -1;
       }
     }
 
-    return {
+    const result: PlaylistInfo = {
       variantUrl: isMaster ? variantUrl : null,
       segments,
       targetDurationSec: targetDuration,
       mediaSequence,
       endList
     };
+    return result;
   }
 
   /**
