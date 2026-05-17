@@ -5,19 +5,25 @@ import { ListeningStats } from '../services/ListeningStats';
 
 /**
  * "个人" Tab 页
- * - 统计数据：累计总时长、专注模式时长、睡眠模式时长
- * - 设置：自动续播、定时关闭、音质
- * - 关于：弹窗显示版本信息
+ * - 月亮头像
+ * - 收听统计
+ * - 定时关闭（带时长胶囊 + 自定义 picker + 开关联动）
+ * - 意见反馈 / 设置 / 关于我们
  */
 @Component
 export struct ProfilePage {
-  @State autoPlay: boolean = true;
-  @State sleepTimer: boolean = false;
-  @State darkMode: boolean = true;
   @State statusBarHeight: number = 40;
   @State totalTime: string = '0s';
   @State focusTime: string = '0s';
   @State sleepTime: string = '0s';
+
+  // 定时关闭
+  @State sleepTimerOn: boolean = false;
+  @State selectedMinutes: number = 0; // 0 表示未选
+  @State showCustomPicker: boolean = false;
+  @State customPickerValue: number = 15; // picker 里的临时值
+
+  private timerOptions: number[] = [30, 60, 90, 120];
 
   aboutToAppear(): void {
     window.getLastWindow(getContext(this)).then(win => {
@@ -27,7 +33,6 @@ export struct ProfilePage {
       this.statusBarHeight = 40;
     });
 
-    // 初始化并加载统计数据
     const context = getContext(this) as common.UIAbilityContext;
     ListeningStats.init(context).then(() => {
       this.refreshStats();
@@ -53,72 +58,31 @@ export struct ProfilePage {
     });
   }
 
-  @Builder
-  SettingRow(icon: string, title: string, value: string, onTap?: () => void) {
-    Row() {
-      Stack() {
-        Text(icon)
-          .fontSize(16)
-          .fontColor('#52FFA1')
-      }
-      .width(32).height(32)
-      .borderRadius(8)
-      .backgroundColor('#1552FFA1')
-      .alignContent(Alignment.Center)
-
-      Text(title)
-        .fontSize(14)
-        .fontColor('#DDFFFFFF')
-        .layoutWeight(1)
-        .margin({ left: 12 })
-
-      Text(value)
-        .fontSize(12)
-        .fontColor('#5E6678')
-
-      Text('\u203A')
-        .fontSize(18)
-        .fontColor('#5E6678')
-        .margin({ left: 8 })
+  /** 选中某个预设时长 */
+  private selectTimer(minutes: number): void {
+    if (this.selectedMinutes === minutes) {
+      // 反选
+      this.selectedMinutes = 0;
+      this.sleepTimerOn = false;
+    } else {
+      this.selectedMinutes = minutes;
+      this.sleepTimerOn = true;
     }
-    .width('100%')
-    .height(52)
-    .padding({ left: 14, right: 14 })
-    .focusable(false)
-    .onClick(() => {
-      if (onTap) {
-        onTap();
-      }
-    })
   }
 
-  @Builder
-  SwitchRow(icon: string, title: string, value: boolean, onChange: (v: boolean) => void) {
-    Row() {
-      Stack() {
-        Text(icon)
-          .fontSize(16)
-          .fontColor('#52FFA1')
-      }
-      .width(32).height(32)
-      .borderRadius(8)
-      .backgroundColor('#1552FFA1')
-      .alignContent(Alignment.Center)
-
-      Text(title)
-        .fontSize(14)
-        .fontColor('#DDFFFFFF')
-        .layoutWeight(1)
-        .margin({ left: 12 })
-
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor('#52FFA1')
-        .switchPointColor('#0A0F1A')
-        .onChange((isOn: boolean) => onChange(isOn))
+  /** 开关切换 */
+  private onTimerSwitchChange(isOn: boolean): void {
+    this.sleepTimerOn = isOn;
+    if (!isOn) {
+      this.selectedMinutes = 0;
     }
-    .width('100%')
-    .height(52)
-    .padding({ left: 14, right: 14 })
+  }
+
+  /** 自定义 picker 确认 */
+  private onCustomConfirm(): void {
+    this.selectedMinutes = this.customPickerValue;
+    this.sleepTimerOn = true;
+    this.showCustomPicker = false;
   }
 
   @Builder
@@ -135,6 +99,29 @@ export struct ProfilePage {
     }
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  MenuRow(icon: string, title: string, onTap?: () => void) {
+    Row() {
+      Text(icon)
+        .fontSize(18)
+        .fontColor('#52FFA1')
+        .margin({ right: 12 })
+
+      Text(title)
+        .fontSize(15)
+        .fontColor('#DDFFFFFF')
+        .layoutWeight(1)
+
+      Text('\u203A')
+        .fontSize(20)
+        .fontColor('#3E4656')
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 18, right: 18 })
+    .onClick(() => { if (onTap) onTap(); })
   }
 
   build() {
@@ -160,7 +147,6 @@ export struct ProfilePage {
           // 个人信息卡片 —— 月亮效果头像
           Column() {
             Stack() {
-              // 最外层：大范围柔和绿色辉光（模拟月球周围的大气散射光晕）
               Column()
                 .width(110).height(110)
                 .borderRadius(55)
@@ -169,14 +155,10 @@ export struct ProfilePage {
                   radius: 55,
                   colors: [['#0052FFA1', 0.55], ['#2252FFA1', 0.72], ['#0052FFA1', 1.0]]
                 })
-
-              // 外部辉光环：模拟月球边缘的绿色大气折射光
               Column()
                 .width(96).height(96)
                 .borderRadius(48)
                 .shadow({ radius: 28, color: '#6052FFA1', offsetX: 0, offsetY: 0 })
-
-              // 月球球体 —— 暗面（主体深色球，左上微亮模拟反射）
               Column()
                 .width(88).height(88)
                 .borderRadius(44)
@@ -186,8 +168,6 @@ export struct ProfilePage {
                   colors: [['#1A2234', 0], ['#0D1320', 0.5], ['#060A12', 1.0]]
                 })
                 .shadow({ radius: 20, color: '#4052FFA1', offsetX: 0, offsetY: 0 })
-
-              // 月球表面：亮边缘弧光（右下侧绿色新月形高光）
               Column()
                 .width(88).height(88)
                 .borderRadius(44)
@@ -196,16 +176,12 @@ export struct ProfilePage {
                   radius: 50,
                   colors: [['#0052FFA1', 0], ['#3352FFA1', 0.6], ['#5552FFA1', 0.82], ['#0052FFA1', 1.0]]
                 })
-
-              // 顶部微弱反光点（模拟月表凸起反射）
               Column()
                 .width(20).height(12)
                 .borderRadius(6)
                 .backgroundColor('#10FFFFFF')
                 .opacity(0.3)
                 .position({ x: 28, y: 18 })
-
-              // 月球表面"陨石坑"质感 —— 用几个小暗点模拟
               Column()
                 .width(8).height(8)
                 .borderRadius(4)
@@ -265,45 +241,111 @@ export struct ProfilePage {
           .border({ width: 1, color: '#0DFFFFFF' })
           .alignItems(HorizontalAlign.Center)
 
-          // 播放设置
-          Text('播放设置')
-            .fontSize(12)
-            .fontColor('#5E6678')
-            .letterSpacing(2)
-            .margin({ top: 32, left: 24, bottom: 10 })
-            .alignSelf(ItemAlign.Start)
-
+          // ========== 定时关闭模块 ==========
           Column() {
-            this.SwitchRow('\u25B6', '启动自动续播', this.autoPlay, (v: boolean) => { this.autoPlay = v; })
-            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
-            this.SwitchRow('\u231A', '定时关闭', this.sleepTimer, (v: boolean) => { this.sleepTimer = v; })
-            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
-            this.SettingRow('\u266B', '音质', '标准', () => {})
+            // 标题行：图标 + 标题 + 描述 + 开关
+            Row() {
+              Text('\u231A')
+                .fontSize(18)
+                .fontColor('#52FFA1')
+                .margin({ right: 10 })
+
+              Column() {
+                Text('定时关闭')
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor('#EEFFFFFF')
+                Text('开启后，电台将在设定时间后自动关闭')
+                  .fontSize(11)
+                  .fontColor('#5E6678')
+                  .margin({ top: 2 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Toggle({ type: ToggleType.Switch, isOn: this.sleepTimerOn })
+                .selectedColor('#52FFA1')
+                .switchPointColor('#0A0F1A')
+                .onChange((isOn: boolean) => this.onTimerSwitchChange(isOn))
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            // 时长胶囊选择区
+            Row({ space: 10 }) {
+              ForEach(this.timerOptions, (minutes: number) => {
+                Column() {
+                  Text(`${minutes}`)
+                    .fontSize(this.selectedMinutes === minutes ? 20 : 16)
+                    .fontWeight(this.selectedMinutes === minutes ? FontWeight.Bold : FontWeight.Normal)
+                    .fontColor(this.selectedMinutes === minutes ? '#52FFA1' : '#8E95A3')
+                  Text('分钟')
+                    .fontSize(10)
+                    .fontColor(this.selectedMinutes === minutes ? '#52FFA1' : '#5E6678')
+                    .margin({ top: 2 })
+                }
+                .width(56).height(56)
+                .borderRadius(28)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                .border({
+                  width: this.selectedMinutes === minutes ? 1.5 : 0.5,
+                  color: this.selectedMinutes === minutes ? '#52FFA1' : '#1EFFFFFF'
+                })
+                .backgroundColor(this.selectedMinutes === minutes ? '#1552FFA1' : '#00000000')
+                .onClick(() => this.selectTimer(minutes))
+              }, (minutes: number) => `timer-${minutes}`)
+
+              // 自定义按钮
+              Column() {
+                Text(this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes)
+                  ? `${this.selectedMinutes}` : '自定义')
+                  .fontSize(this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes) ? 16 : 12)
+                  .fontColor(this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes)
+                    ? '#52FFA1' : '#8E95A3')
+              }
+              .width(56).height(56)
+              .borderRadius(28)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              .border({
+                width: (this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes)) ? 1.5 : 0.5,
+                color: (this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes))
+                  ? '#52FFA1' : '#1EFFFFFF'
+              })
+              .backgroundColor((this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes))
+                ? '#1552FFA1' : '#00000000')
+              .onClick(() => {
+                this.customPickerValue = this.selectedMinutes > 0 && !this.timerOptions.includes(this.selectedMinutes)
+                  ? this.selectedMinutes : 15;
+                this.showCustomPicker = true;
+              })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.SpaceBetween)
+            .margin({ top: 18 })
+          }
+          .width('88%')
+          .padding({ top: 20, bottom: 20, left: 18, right: 18 })
+          .borderRadius(18)
+          .backgroundColor('#111622')
+          .border({ width: 0.5, color: '#0DFFFFFF' })
+          .margin({ top: 28 })
+
+          // ========== 意见反馈 / 设置 / 关于我们 ==========
+          Column() {
+            this.MenuRow('\uD83D\uDCAC', '意见反馈', () => {})
+            Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
+            this.MenuRow('\u2699', '设置', () => {})
+            Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
+            this.MenuRow('\u24D8', '关于我们', () => { this.showAboutDialog(); })
           }
           .width('88%')
           .borderRadius(18)
           .backgroundColor('#111622')
           .border({ width: 0.5, color: '#0DFFFFFF' })
           .clip(true)
-
-          // 其他
-          Text('其他')
-            .fontSize(12)
-            .fontColor('#5E6678')
-            .letterSpacing(2)
-            .margin({ top: 24, left: 24, bottom: 10 })
-            .alignSelf(ItemAlign.Start)
-
-          Column() {
-            this.SwitchRow('\u263D', '深色主题', this.darkMode, (v: boolean) => { this.darkMode = v; })
-            Column().width('85%').height(0.5).backgroundColor(0x0DFFFFFF).alignSelf(ItemAlign.End)
-            this.SettingRow('\u2699', '关于 X.FM', 'v6.10', () => { this.showAboutDialog(); })
-          }
-          .width('88%')
-          .borderRadius(18)
-          .backgroundColor('#111622')
-          .border({ width: 0.5, color: '#0DFFFFFF' })
-          .clip(true)
+          .margin({ top: 16 })
 
           Blank().height(110)
         }
@@ -314,8 +356,67 @@ export struct ProfilePage {
       .height('100%')
       .scrollBar(BarState.Off)
       .focusable(false)
+
+      // ========== 自定义时长 Picker 弹层 ==========
+      if (this.showCustomPicker) {
+        // 遮罩
+        Column()
+          .width('100%').height('100%')
+          .backgroundColor('#80000000')
+          .onClick(() => { this.showCustomPicker = false; })
+
+        // 底部弹出面板
+        Column() {
+          // 顶部操作栏
+          Row() {
+            Text('取消')
+              .fontSize(15)
+              .fontColor('#5E6678')
+              .onClick(() => { this.showCustomPicker = false; })
+
+            Text('自定义时长')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#EEFFFFFF')
+
+            Text('确定')
+              .fontSize(15)
+              .fontColor('#52FFA1')
+              .onClick(() => this.onCustomConfirm())
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.SpaceBetween)
+          .padding({ left: 24, right: 24, top: 16, bottom: 12 })
+
+          // Picker
+          TextPicker({ range: this.buildMinuteRange(), selected: this.customPickerValue - 1 })
+            .defaultPickerItemHeight(44)
+            .disappearTextStyle({ color: '#335E6678', font: { size: 14 } })
+            .textStyle({ color: '#5E6678', font: { size: 16 } })
+            .selectedTextStyle({ color: '#52FFA1', font: { size: 22, weight: FontWeight.Bold } })
+            .onChange((value: string | string[], index: number | number[]) => {
+              const idx = typeof index === 'number' ? index : index[0];
+              this.customPickerValue = idx + 1;
+            })
+            .width('100%')
+            .height(200)
+        }
+        .width('100%')
+        .backgroundColor('#1A2030')
+        .borderRadius({ topLeft: 20, topRight: 20 })
+        .position({ x: 0, y: '65%' })
+      }
     }
     .width('100%').height('100%')
     .focusable(false)
+  }
+
+  /** 生成 1~60 分钟的字符串数组给 TextPicker */
+  private buildMinuteRange(): string[] {
+    const arr: string[] = [];
+    for (let i = 1; i <= 60; i++) {
+      arr.push(`${i} 分钟`);
+    }
+    return arr;
   }
 }
