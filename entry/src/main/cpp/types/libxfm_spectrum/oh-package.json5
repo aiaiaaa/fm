@@ -1,0 +1,6 @@
+{
+  "name": "libxfm_spectrum.so",
+  "types": "./Index.d.ts",
+  "version": "1.0.0",
+  "description": "X.FM real-time AAC->PCM->FFT spectrum analyzer"
+}

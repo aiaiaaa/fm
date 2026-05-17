@@ -1,6 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HlsAacTap } from './spectrum/HlsAacTap';
-import { BandSynthesizer } from './spectrum/BandSynthesizer';
+import spectrum from 'libxfm_spectrum.so';
 
 const TAG = 'AudioVisualizer';
 const BAND_COUNT = 16;
@@ -8,22 +8,15 @@ const BAND_COUNT = 16;
 /**
  * 音频可视化服务
  *
- * 主路径（数据驱动）：
- *   m3u8 ──► HlsAacTap（旁路解封装，独立于 AVPlayer）──► ADTS 帧能量
- *           ──► BandSynthesizer（贝尔形 16 频段合成）──► UI
+ * 主路径（NDK 真 FFT）：
+ *   m3u8 ──► HlsAacTap（旁路 TS demux，独立于 AVPlayer）
+ *           ──► ADTS 帧 ──► NDK xfm_spectrum
+ *                            ├─ OH_AudioCodec 解码 AAC -> PCM
+ *                            └─ 1024-pt FFT -> 16 log-spaced bands
+ *           ──► UI
  *
  * 降级（任何环节失败 / 未配置流地址）：
  *   多频率正弦叠加 + 随机扰动 → 16 频段
- *
- * 调用方式：
- *   vis.attachStream(url)
- *   vis.start(cb)
- *   vis.setActive(true | false)
- *   vis.stop()
- *
- * 注：完整的真 FFT 频谱需要 PCM，HarmonyOS NEXT 的 ArkTS 层没有 AAC 解码器，
- * 必须走 NDK OH_AudioCodec。这里用 ADTS 帧字节数作为能量代理量，配合贝尔形
- * 空间分布合成出与 bbg.fm 视觉接近的频谱效果。
  */
 export type SpectrumCallback = (bands: number[]) => void;
 
@@ -34,7 +27,7 @@ export class AudioVisualizer {
 
   // 真实管线
   private tap: HlsAacTap | null = null;
-  private synth: BandSynthesizer | null = null;
+  private nativeHandle: number = 0; // 0 = 未创建
   private receivedRealFrame: boolean = false;
   private healthCheckTimer: number = -1;
 
@@ -72,9 +65,11 @@ export class AudioVisualizer {
     this.active = playing;
     hilog.info(0x0000, TAG, `setActive: ${playing}`);
     this.tap?.setActive(playing);
-    this.synth?.setActive(playing);
     if (!playing) {
-      // 暂停时柔和归零
+      // 暂停时：复位 native 内部状态 + 柔和归零
+      if (this.nativeHandle !== 0) {
+        try { spectrum.reset(this.nativeHandle); } catch (_e) { /* ignore */ }
+      }
       this.prevBands = new Array<number>(BAND_COUNT).fill(0);
       this.emitBands(new Array<number>(BAND_COUNT).fill(0));
     }
@@ -94,7 +89,10 @@ export class AudioVisualizer {
       this.tap = null;
       await t.stop();
     }
-    this.synth = null;
+    if (this.nativeHandle !== 0) {
+      try { spectrum.destroy(this.nativeHandle); } catch (_e) { /* ignore */ }
+      this.nativeHandle = 0;
+    }
     this.callback = null;
     this.fallbackActive = false;
   }
@@ -105,13 +103,26 @@ export class AudioVisualizer {
     this.fallbackActive = false;
     this.receivedRealFrame = false;
 
-    this.synth = new BandSynthesizer((bands: number[]) => {
-      this.receivedRealFrame = true;
-      this.emitBands(bands);
-    });
+    // 创建 native 实例。bands 回调由 napi_threadsafe_function 切回 ArkTS 主线程。
+    try {
+      this.nativeHandle = spectrum.create((bands: number[]) => {
+        this.receivedRealFrame = true;
+        this.emitBands(bands);
+      });
+    } catch (e) {
+      hilog.error(0x0000, TAG, `spectrum.create failed: ${(e as Error).message}`);
+      this.switchToFallback();
+      return;
+    }
 
-    this.tap = new HlsAacTap((frameBytes: number) => {
-      this.synth?.feedFrame(frameBytes);
+    this.tap = new HlsAacTap((adts: Uint8Array) => {
+      if (this.nativeHandle !== 0) {
+        try {
+          spectrum.feedAdts(this.nativeHandle, adts);
+        } catch (e) {
+          hilog.warn(0x0000, TAG, `feedAdts threw: ${(e as Error).message}`);
+        }
+      }
     });
 
     try {
@@ -120,7 +131,6 @@ export class AudioVisualizer {
         this.switchToFallback();
       });
       this.tap.setActive(this.active);
-      this.synth.setActive(this.active);
       hilog.info(0x0000, TAG, `real pipeline started for ${this.streamUrl}`);
     } catch (e) {
       hilog.warn(0x0000, TAG, `start tap failed: ${(e as Error).message}`);
@@ -144,6 +154,10 @@ export class AudioVisualizer {
       this.tap = null;
       await t.stop();
     }
+    if (this.nativeHandle !== 0) {
+      try { spectrum.destroy(this.nativeHandle); } catch (_e) { /* ignore */ }
+      this.nativeHandle = 0;
+    }
     if (this.fallbackTimer >= 0) {
       clearInterval(this.fallbackTimer);
       this.fallbackTimer = -1;
@@ -162,7 +176,10 @@ export class AudioVisualizer {
       this.tap = null;
       await t.stop();
     }
-    this.synth = null;
+    if (this.nativeHandle !== 0) {
+      try { spectrum.destroy(this.nativeHandle); } catch (_e) { /* ignore */ }
+      this.nativeHandle = 0;
+    }
     this.startFallback();
   }
 
@@ -210,7 +227,7 @@ export class AudioVisualizer {
 
   private emitBands(bands: number[]): void {
     if (!this.callback) return;
-    // 真实管线已经做了平滑，这里只对 fallback 平滑一下
+    // native 已平滑过；fallback 没平滑 —— 这里统一过一次
     const smoothed: number[] = [];
     for (let i = 0; i < BAND_COUNT; i++) {
       const target = bands[i] ?? 0;

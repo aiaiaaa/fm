@@ -7,9 +7,9 @@ import { TsDemuxer } from './TsDemuxer';
 const TAG = 'HlsAacTap';
 
 /**
- * HLS 旁路解码管线
+ * HLS 旁路解封装管线
  *
- *   m3u8 轮询 ──► segment 队列 ──► HTTP GET TS ──► TsDemuxer ──► ADTS 帧大小
+ *   m3u8 轮询 ──► segment 队列 ──► HTTP GET TS ──► TsDemuxer ──► ADTS 帧（Uint8Array）
  *
  * 与 AVPlayer 完全独立：第二份网络拉取，不出声只解封装。
  *
@@ -19,21 +19,16 @@ const TAG = 'HlsAacTap';
  *   - 同一 sequence 不重复下载
  *   - 出错连续 3 次 → 上层切到模拟降级
  *
- * !!! 关于 PCM !!!
- *   原计划是接 media.AudioDecoder 拿 PCM 做 FFT，但 HarmonyOS NEXT 的 ArkTS
- *   层 @kit.MediaKit 没有 AudioDecoder（只有 AudioEncoder），需要走 NDK
- *   OH_AudioCodec 才能拿到 PCM。这里改为输出每帧 ADTS 编码字节数（≈ 该帧
- *   的"音频复杂度/能量"代理量），交给 BandSynthesizer 合成 16 频段振幅。
- *   有声音时柱条会真实律动，安静时贴底，比纯模拟更准。
+ * 输出的每帧是完整 ADTS 包（含 7 字节 header），交给 NDK 模块去 AAC->PCM->FFT。
  */
-export type FrameEnergySink = (frameBytes: number) => void;
+export type AdtsFrameSink = (frame: Uint8Array) => void;
 
 interface HttpHeaders {
   Accept: string;
 }
 
 export class HlsAacTap {
-  private readonly sink: FrameEnergySink;
+  private readonly sink: AdtsFrameSink;
 
   private playlistUrl: string = '';
   private currentPlaylistUrl: string = '';
@@ -49,12 +44,7 @@ export class HlsAacTap {
   private consecutiveErrors: number = 0;
   private onFatalError: (() => void) | null = null;
 
-  // 节流：同一段 TS 解出来可能有几百帧 ADTS，UI 只需要 ~30fps
-  private lastEmitTs: number = 0;
-  private accumBytes: number = 0;
-  private accumCount: number = 0;
-
-  constructor(sink: FrameEnergySink) {
+  constructor(sink: AdtsFrameSink) {
     this.sink = sink;
   }
 
@@ -97,8 +87,6 @@ export class HlsAacTap {
     this.demuxer = null;
     this.segmentQueue = [];
     this.downloadedSeqs.clear();
-    this.accumBytes = 0;
-    this.accumCount = 0;
   }
 
   private scheduleNextPlaylistFetch(ms: number): void {
@@ -191,29 +179,11 @@ export class HlsAacTap {
   }
 
   /**
-   * ADTS 帧入口。这里做"按时间间隔节流"——网络上一段 TS 一次性会塞 100+ 帧，
-   * 但 UI 只需要 ~30fps，所以累积一段时间再 emit 平均值（保留峰值灵敏度）。
-   *
-   * AAC 一帧 = 1024 samples，44.1kHz 下约 23ms，合并 1 帧/40ms 到一次输出。
+   * ADTS 帧入口：直接转给 sink（NDK 解码器）
    */
   private onAdtsFrame(adts: Uint8Array): void {
     if (!this.active) return;
-
-    this.accumBytes += adts.length;
-    this.accumCount += 1;
-
-    const now = Date.now();
-    if (this.lastEmitTs === 0) {
-      this.lastEmitTs = now;
-    }
-    if (now - this.lastEmitTs >= 40) {
-      // 取窗口内的平均字节数作为这一帧的能量
-      const avg = this.accumBytes / Math.max(1, this.accumCount);
-      this.sink(avg);
-      this.lastEmitTs = now;
-      this.accumBytes = 0;
-      this.accumCount = 0;
-    }
+    this.sink(adts);
   }
 
   private async httpGetText(url: string): Promise<string> {
