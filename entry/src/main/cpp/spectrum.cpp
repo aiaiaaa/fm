@@ -79,7 +79,21 @@ void SpectrumAnalyzer::Analyze(const float* samples) {
     // 2) FFT in place
     fft_.forward(re_.data(), im_.data());
 
-    // 3) Bin into 16 bands, RMS per bin, dB-mapped
+    // 3) Bin into 16 bands, RMS per bin, dB-mapped.
+    //
+    // Two adjustments vs. a "naive" linear FFT->bar mapping:
+    //
+    //  a) Wider dynamic range: -65dB .. -5dB instead of -50..0. Real audio
+    //     rarely fills the whole scale; mapping all the way to 0dB leaves
+    //     bars perpetually at half-mast. A -65dB floor and -5dB ceiling
+    //     gives us ~60dB of room while saturating much sooner.
+    //
+    //  b) Per-band gain compensation. Acoustic energy is far stronger in
+    //     the lows (vocals, drums) than the highs (cymbals, sibilance), so
+    //     a flat dB scale leaves the right side of the spectrum dead. We
+    //     apply a +9dB tilt across the 16 bands (linear in band index) to
+    //     match what the ear perceives as "balanced", similar to what
+    //     audio analyzer plugins call "perceptual weighting".
     std::vector<float> bands(kBandCount, 0.0f);
     const size_t half = kFftSize >> 1;
     for (size_t b = 0; b < kBandCount; ++b) {
@@ -94,21 +108,25 @@ void SpectrumAnalyzer::Analyze(const float* samples) {
             ++count;
         }
         const float rms = count > 0 ? std::sqrt(sum_sq / count) / kFftSize : 0.0f;
-        const float db = rms > 0.0f ? 20.0f * std::log10(rms) : -100.0f;
-        // Map -50dB..0dB -> 0..1
-        float v = (db + 50.0f) / 50.0f;
+        float db = rms > 0.0f ? 20.0f * std::log10(rms) : -100.0f;
+        // Perceptual tilt: 0dB at band 0, +9dB at band 15.
+        db += 9.0f * (static_cast<float>(b) / (kBandCount - 1));
+        // Map -65dB..-5dB -> 0..1 (60dB dynamic range, saturates more easily)
+        float v = (db + 65.0f) / 60.0f;
         if (v < 0.0f) v = 0.0f;
         if (v > 1.0f) v = 1.0f;
         bands[b] = v;
     }
 
-    // 4) Asymmetric smoothing (snap up, decay down)
+    // 4) Asymmetric smoothing: snap up fast, decay slow. Tuned aggressive
+    //    so the bars feel reactive rather than mushy. ArkTS-side smoothing
+    //    has been removed — this is the only smoothing layer now.
     for (size_t i = 0; i < kBandCount; ++i) {
         const float prev = prev_bands_[i];
         const float target = bands[i];
         bands[i] = target > prev
-            ? prev + (target - prev) * 0.6f
-            : prev + (target - prev) * 0.25f;
+            ? prev + (target - prev) * 0.85f   // attack
+            : prev + (target - prev) * 0.35f;  // release
     }
     prev_bands_ = bands;
 

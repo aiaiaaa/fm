@@ -15,7 +15,7 @@ export struct WaveVisualizer {
   @Prop @Watch('onStreamUrlChange') streamUrl: string = '';
   @Prop accent: string = '#52FFA1';
   @Prop bars: number = 16;
-  @Prop maxHeight: number = 42;
+  @Prop maxHeight: number = 72;
 
   @State levels: number[] = new Array(16).fill(0);
 
@@ -26,11 +26,10 @@ export struct WaveVisualizer {
     if (this.streamUrl) {
       this.visualizer.attachStream(this.streamUrl);
     }
-    // 与 NDK pacer 的 23ms 节拍匹配：每帧动画时长 = pacer 间隔
+    // 直接赋值，不用 animateTo —— native pacer 已经按 23ms 节拍发帧 +
+    // 内部做了 attack/release 平滑，再叠 ArkUI 动画反而会"糊"。
     this.visualizer.start((bands: number[]) => {
-      animateTo({ duration: 23, curve: Curve.Linear }, () => {
-        this.levels = bands;
-      });
+      this.levels = bands;
     });
     if (this.active) {
       this.visualizer.setActive(true);
@@ -52,7 +51,7 @@ export struct WaveVisualizer {
   }
 
   build() {
-    Row({ space: 4 }) {
+    Row({ space: 5 }) {
       // !!! ArkUI 关键坑位：
       //   ForEach itemBuilder 的闭包参数 lv 是首次 build 的 number 快照，
       //   ArkUI 状态系统不会追踪它。只有读取 this.levels[idx]（真正的 @State）
@@ -60,14 +59,17 @@ export struct WaveVisualizer {
       //   才会刷新，柱子才会真的"动"起来。
       ForEach(this.levels, (_lv: number, idx: number) => {
         Column()
-          .width(5)
-          .height(Math.max(5, (this.levels[idx] ?? 0) * this.maxHeight))
-          .borderRadius(2.5)
+          .width(6)
+          .height(Math.max(6, (this.levels[idx] ?? 0) * this.maxHeight))
+          .borderRadius(3)
           .linearGradient({
             angle: 180,
             colors: this.getBarColors(idx)
           })
-          .opacity(this.active ? (0.6 + (this.levels[idx] ?? 0) * 0.4) : 0.2)
+          .shadow(this.active && (this.levels[idx] ?? 0) > 0.4
+            ? { radius: 8, color: this.glowColor(idx), offsetX: 0, offsetY: 0 }
+            : { radius: 0, color: '#00000000', offsetX: 0, offsetY: 0 })
+          .opacity(this.active ? (0.85 + (this.levels[idx] ?? 0) * 0.15) : 0.25)
       }, (_: number, idx: number) => `wv-${idx}`)
     }
     .height(this.maxHeight)
@@ -77,16 +79,24 @@ export struct WaveVisualizer {
   }
 
   /**
-   * 每根柱条的渐变色：从左到右 绿→青 过渡
+   * 每根柱条的渐变色：从左到右 绿→青 过渡。
+   * 顶部用饱和度更高的霓虹色，底部带半透明，配合 .shadow() 模拟发光。
    */
   private getBarColors(idx: number): [string, number][] {
-    // 16根柱条从 #52FFA1(绿) 渐变到 #00D2FF(青)
     const t = idx / (this.bars - 1);
-    const r = Math.round(0x52 + (0x00 - 0x52) * t);
-    const g = Math.round(0xFF + (0xD2 - 0xFF) * t);
-    const b = Math.round(0xA1 + (0xFF - 0xA1) * t);
-    const topColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    const bottomColor = topColor + '66'; // 带透明度的底色
-    return [[topColor, 0], [bottomColor, 1]];
+    // 顶部：#7CFFB8（饱和绿）→ #56E8FF（饱和青），明显比之前的 #52FFA1 / #00D2FF 更亮
+    const tr = Math.round(0x7C + (0x56 - 0x7C) * t);
+    const tg = Math.round(0xFF + (0xE8 - 0xFF) * t);
+    const tb = Math.round(0xB8 + (0xFF - 0xB8) * t);
+    const top = `#${tr.toString(16).padStart(2, '0')}${tg.toString(16).padStart(2, '0')}${tb.toString(16).padStart(2, '0')}`;
+    // 底部：同色调降亮度 + 半透明
+    const bottom = `${top}80`;
+    return [[top, 0], [bottom, 1]];
+  }
+
+  /** 用于发光效果的颜色（饱和顶色） */
+  private glowColor(idx: number): string {
+    const t = idx / (this.bars - 1);
+    return t < 0.5 ? '#7CFFB8' : '#56E8FF';
   }
 }

@@ -64,7 +64,12 @@ namespace {
 // freeze visibly. If decode bursts faster, we cap the ring at 256
 // frames (~6s) and drop oldest, keeping latency bounded.
 constexpr int kPaceIntervalMs = 23;
-constexpr size_t kRingMax = 256;
+// Cap ring at ~750ms of bands. Anything bigger and the visualization drifts
+// behind the audio: HLS bursts a 5s segment of decoded frames at once, the
+// pacer can only drain 23ms each tick, so a fat ring guarantees lag.
+// 32 frames * 23ms ≈ 736ms — enough cushion to ride out one segment fetch
+// without underrun, while keeping bands within ~1s of what the user hears.
+constexpr size_t kRingMax = 32;
 
 // One instance per ArkTS visualizer. Identified by a numeric handle.
 struct Instance {

@@ -434,7 +434,7 @@ export struct PlayerPage {
             streamUrl: this.currentUrl(),
             accent: cfg.accent,
             bars: 16,
-            maxHeight: 44
+            maxHeight: 72
           })
         }
         .width('100%')

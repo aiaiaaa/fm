@@ -219,21 +219,13 @@ export class AudioVisualizer {
     if (!allZero) this.emitBands(bands);
   }
 
-  /* ============= 输出（带平滑） ============= */
+  /* ============= 输出（透传，不再二次平滑） ============= */
 
   private emitBands(bands: number[]): void {
     if (!this.callback) return;
-    // native 已平滑过；fallback 没平滑 —— 这里统一过一次
-    const smoothed: number[] = [];
-    for (let i = 0; i < BAND_COUNT; i++) {
-      const target = bands[i] ?? 0;
-      const prev = this.prevBands[i];
-      const v = target > prev
-        ? prev + (target - prev) * 0.7
-        : prev + (target - prev) * 0.3;
-      smoothed.push(v);
-    }
-    this.prevBands = smoothed;
-    this.callback(smoothed);
+    // native 已经做了 attack/release 平滑，这里直接透传给 UI。
+    // fallback 模式 emit 的本来就是连续的呼吸/正弦值，也不需要二次平滑。
+    this.prevBands = bands;
+    this.callback(bands);
   }
 }
