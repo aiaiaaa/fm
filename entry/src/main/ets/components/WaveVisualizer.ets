@@ -26,8 +26,9 @@ export struct WaveVisualizer {
     if (this.streamUrl) {
       this.visualizer.attachStream(this.streamUrl);
     }
+    // 与 NDK pacer 的 33ms 节拍匹配：动画时长稍短让柱条不会"拖泥带水"
     this.visualizer.start((bands: number[]) => {
-      animateTo({ duration: 60, curve: Curve.Linear }, () => {
+      animateTo({ duration: 30, curve: Curve.Linear }, () => {
         this.levels = bands;
       });
     });

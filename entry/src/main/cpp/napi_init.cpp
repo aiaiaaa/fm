@@ -7,10 +7,23 @@
  *   reset(handle)
  *   destroy(handle)
  *
- * Threading:
- *   The OH_AudioCodec dispatches output buffers on a codec-internal thread.
- *   We funnel each band frame through napi_threadsafe_function so the JS
- *   callback always runs on the original ArkTS thread.
+ * Threading & pacing:
+ *   HLS delivers a whole 5s segment in one network burst, which the codec
+ *   then chews through in ~200ms producing ~215 FFT-band frames back to back.
+ *   If we forward those raw to ArkTS the UI sees a 200ms flurry followed by
+ *   ~4.8s of silence — visually it looks like the spectrum is "barely
+ *   moving". To fix that we keep an internal ring buffer of band frames
+ *   and drain it on a steady ~30fps pacing thread that hands them to JS at
+ *   the *playback* rate, not the *decode* rate.
+ *
+ *   layout per instance:
+ *     codec thread  →  analyzer  →  ring buffer (this file)
+ *                                       │
+ *                                pacing thread (33ms tick)
+ *                                       │
+ *                                 napi_threadsafe_function
+ *                                       │
+ *                                  ArkTS bands callback
  *
  * Note on logging:
  *   HarmonyOS hilog redacts every numeric/string format placeholder as
@@ -19,9 +32,13 @@
  */
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -38,12 +55,29 @@
 
 namespace {
 
+// Pace bands out at ~30 fps so the UI animation looks smooth.
+// (1024 samples / 44.1kHz ≈ 23ms per AAC frame; 33ms is a tad slower so a
+// 5-second segment of decoded frames takes ~5 seconds to drain — exactly
+// matching playback. If the buffer ever runs dry we just hold the last
+// emitted bands; if it overflows we drop the oldest to keep latency
+// bounded to ~1 second.)
+constexpr int kPaceIntervalMs = 33;
+constexpr size_t kRingMax = 256; // ~8.5 seconds of bands at 30fps
+
 // One instance per ArkTS visualizer. Identified by a numeric handle.
 struct Instance {
     std::unique_ptr<xfm::AacDecoder> decoder;
     std::unique_ptr<xfm::SpectrumAnalyzer> analyzer;
     napi_threadsafe_function tsfn = nullptr;
     bool decoder_inited = false;
+
+    // pacing
+    std::thread pacer;
+    std::mutex ring_mtx;
+    std::condition_variable ring_cv;
+    std::deque<std::vector<float>> ring; // FIFO of band frames waiting to emit
+    std::vector<float> last_emitted;     // held when ring runs dry
+    std::atomic<bool> pacer_run{false};
 };
 
 // Global registry of instances. Handle 0 is reserved as "invalid".
@@ -60,6 +94,7 @@ std::shared_ptr<Instance> FindInstance(uint32_t handle) {
 
 // Track stats so you can grep hilog and see what's actually going on
 std::atomic<uint32_t> g_adts_fed{0};
+std::atomic<uint32_t> g_bands_produced{0};
 std::atomic<uint32_t> g_bands_emitted{0};
 
 /**
@@ -111,6 +146,58 @@ void CallJsBands(napi_env env, napi_value js_callback, void* /*context*/, void* 
     delete bands;
 }
 
+/**
+ * Pacer thread: every kPaceIntervalMs, pop one frame from the ring (or hold
+ * the last emitted frame if empty) and dispatch it to JS via tsfn.
+ *
+ * Why a dedicated thread vs. an in-thread timer: napi has no native timer,
+ * and we don't want to depend on the JS event loop for pacing (it stalls
+ * during heavy ArkTS work). std::thread + sleep_for is dead simple and
+ * gives us a steady drumbeat.
+ */
+void PacerLoop(std::shared_ptr<Instance> inst) {
+    while (inst->pacer_run.load(std::memory_order_acquire)) {
+        auto next_tick = std::chrono::steady_clock::now() +
+                         std::chrono::milliseconds(kPaceIntervalMs);
+
+        std::vector<float> frame;
+        {
+            std::unique_lock<std::mutex> lk(inst->ring_mtx);
+            if (!inst->ring.empty()) {
+                frame = std::move(inst->ring.front());
+                inst->ring.pop_front();
+                inst->last_emitted = frame;
+            } else if (!inst->last_emitted.empty()) {
+                // Buffer underrun: re-emit last frame so the UI doesn't
+                // freeze visibly. This typically only happens at startup
+                // before the first segment is decoded.
+                frame = inst->last_emitted;
+            } else {
+                // No data at all yet; skip this tick.
+                std::this_thread::sleep_until(next_tick);
+                continue;
+            }
+        }
+
+        if (inst->tsfn != nullptr) {
+            uint32_t emitted = ++g_bands_emitted;
+            if (emitted == 1 || emitted == 30 || (emitted % 300) == 0) {
+                LOGW("paced bands emit: total=%{public}u (b0=%{public}.2f b8=%{public}.2f b15=%{public}.2f)",
+                     emitted, frame.empty() ? 0.0f : frame[0],
+                     frame.size() > 8 ? frame[8] : 0.0f,
+                     frame.size() > 15 ? frame[15] : 0.0f);
+            }
+            auto* copy = new std::vector<float>(std::move(frame));
+            napi_status status = napi_call_threadsafe_function(inst->tsfn, copy, napi_tsfn_nonblocking);
+            if (status != napi_ok) {
+                delete copy;
+            }
+        }
+
+        std::this_thread::sleep_until(next_tick);
+    }
+}
+
 // === JS-exposed methods ===
 
 napi_value Create(napi_env env, napi_callback_info info) {
@@ -145,26 +232,27 @@ napi_value Create(napi_env env, napi_callback_info info) {
         return nullptr;
     }
 
-    // Analyzer emits std::vector<float>; we marshal to JS thread.
-    napi_threadsafe_function tsfn = inst->tsfn;
-    inst->analyzer = std::make_unique<xfm::SpectrumAnalyzer>([tsfn](const std::vector<float>& bands) {
-        uint32_t emitted = ++g_bands_emitted;
-        if (emitted == 1 || emitted == 10 || (emitted % 100) == 0) {
-            OH_LOG_Print(LOG_APP, LOG_WARN, 0x0000, "xfm_napi",
-                "bands emitted: total=%{public}u (b0=%{public}.2f b8=%{public}.2f b15=%{public}.2f)",
-                emitted, bands.empty() ? 0.0f : bands[0],
-                bands.size() > 8 ? bands[8] : 0.0f,
-                bands.size() > 15 ? bands[15] : 0.0f);
+    // Analyzer pushes into the ring, the pacer drains it. Capture a weak
+    // shared_ptr-like raw pointer on the analyzer side; lifetime is bounded
+    // by Destroy() which joins the pacer before returning.
+    Instance* raw = inst.get();
+    inst->analyzer = std::make_unique<xfm::SpectrumAnalyzer>([raw](const std::vector<float>& bands) {
+        ++g_bands_produced;
+        std::lock_guard<std::mutex> lk(raw->ring_mtx);
+        if (raw->ring.size() >= kRingMax) {
+            // Drop oldest to bound latency. Visualization doesn't care about
+            // a 200ms-ago band frame when 8s of newer ones are queued.
+            raw->ring.pop_front();
         }
-        auto* copy = new std::vector<float>(bands);
-        napi_status status = napi_call_threadsafe_function(tsfn, copy, napi_tsfn_nonblocking);
-        if (status != napi_ok) {
-            // Queue full or thread-safe func dead; drop this frame.
-            delete copy;
-        }
+        raw->ring.emplace_back(bands);
+        raw->ring_cv.notify_one();
     });
 
     inst->decoder = std::make_unique<xfm::AacDecoder>();
+
+    // Start pacing thread.
+    inst->pacer_run.store(true, std::memory_order_release);
+    inst->pacer = std::thread(PacerLoop, inst);
 
     uint32_t handle = g_next_handle.fetch_add(1);
     {
@@ -174,7 +262,7 @@ napi_value Create(napi_env env, napi_callback_info info) {
 
     napi_value result;
     napi_create_uint32(env, handle, &result);
-    LOGW("create -> handle=%{public}u", handle);
+    LOGW("create -> handle=%{public}u (paced @ %{public}dms)", handle, kPaceIntervalMs);
     return result;
 }
 
@@ -271,6 +359,11 @@ napi_value Reset(napi_env env, napi_callback_info info) {
     if (!inst) return nullptr;
     if (inst->decoder) inst->decoder->Reset();
     if (inst->analyzer) inst->analyzer->Reset();
+    {
+        std::lock_guard<std::mutex> lk(inst->ring_mtx);
+        inst->ring.clear();
+        inst->last_emitted.clear();
+    }
     return nullptr;
 }
 
@@ -291,13 +384,23 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
         g_instances.erase(it);
     }
     if (inst) {
+        // Stop pacer first so it doesn't try to use tsfn after we release it.
+        inst->pacer_run.store(false, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lk(inst->ring_mtx);
+            inst->ring.clear();
+        }
+        inst->ring_cv.notify_all();
+        if (inst->pacer.joinable()) inst->pacer.join();
+
         if (inst->decoder) inst->decoder->Release();
         if (inst->tsfn) {
             napi_release_threadsafe_function(inst->tsfn, napi_tsfn_release);
             inst->tsfn = nullptr;
         }
     }
-    LOGW("destroy handle=%{public}u", handle);
+    LOGW("destroy handle=%{public}u (produced=%{public}u emitted=%{public}u)",
+         handle, g_bands_produced.load(), g_bands_emitted.load());
     return nullptr;
 }
 
