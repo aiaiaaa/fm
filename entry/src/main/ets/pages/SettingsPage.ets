@@ -52,21 +52,28 @@ struct SettingsPage {
       Column() {
         // ======== 顶部导航栏（带阴影"帽子"） ========
         Row() {
-          Text('\u2039')
-            .fontSize(32)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
-            .onClick(() => { router.back(); })
-            .padding({ right: 6 })
+          // 内层容器宽度与下方列表卡片一致（88% 居中），这样图标的左边缘
+          // 才会跟列表里"语言/屏幕常亮/版本号"文字开头精确对齐。
+          Row() {
+            Text('\u2039')
+              .fontSize(32)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#FFFFFF')
+              .onClick(() => { router.back(); })
+              .padding({ right: 6 })
 
-          Text('设置')
-            .fontSize(18)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#FFFFFF')
+            Text('设置')
+              .fontSize(18)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#FFFFFF')
+          }
+          .width('88%')
+          .padding({ left: 18, right: 18 })
+          .alignItems(VerticalAlign.Center)
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({ left: 18, right: 20, top: this.statusBarHeight + 14, bottom: 14 })
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: this.statusBarHeight + 14, bottom: 14 })
         .backgroundColor('#0E1420')
         .shadow({ radius: 12, color: '#40000000', offsetX: 0, offsetY: 4 })
 
