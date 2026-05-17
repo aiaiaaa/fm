@@ -27,14 +27,14 @@ struct SettingsPage {
   }
 
   private showLanguagePicker(): void {
-    // 构建 buttons 列表
-    const buttons: promptAction.Button[] = this.languageOptions.map((lang: string) => {
-      return { text: lang, color: lang === this.language ? '#52FFA1' : '#FFFFFF' } as promptAction.Button;
-    });
-
     promptAction.showActionMenu({
       title: '选择语言',
-      buttons: buttons
+      buttons: [
+        { text: '简体中文', color: this.language === '简体中文' ? '#52FFA1' : '#FFFFFF' },
+        { text: '繁體中文', color: this.language === '繁體中文' ? '#52FFA1' : '#FFFFFF' },
+        { text: 'English', color: this.language === 'English' ? '#52FFA1' : '#FFFFFF' },
+        { text: '日本語', color: this.language === '日本語' ? '#52FFA1' : '#FFFFFF' }
+      ]
     }).then((result: promptAction.ActionMenuSuccessResponse) => {
       if (result.index >= 0 && result.index < this.languageOptions.length) {
         this.language = this.languageOptions[result.index];
