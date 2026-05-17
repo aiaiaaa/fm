@@ -12,6 +12,7 @@ import { AudioVisualizer } from '../services/AudioVisualizer';
 @Component
 export struct WaveVisualizer {
   @Prop @Watch('onActiveChange') active: boolean = false;
+  @Prop @Watch('onStreamUrlChange') streamUrl: string = '';
   @Prop accent: string = '#52FFA1';
   @Prop bars: number = 16;
   @Prop maxHeight: number = 42;
@@ -22,6 +23,9 @@ export struct WaveVisualizer {
 
   aboutToAppear(): void {
     this.levels = new Array(this.bars).fill(0);
+    if (this.streamUrl) {
+      this.visualizer.attachStream(this.streamUrl);
+    }
     this.visualizer.start((bands: number[]) => {
       animateTo({ duration: 60, curve: Curve.Linear }, () => {
         this.levels = bands;
@@ -38,6 +42,12 @@ export struct WaveVisualizer {
 
   onActiveChange(): void {
     this.visualizer.setActive(this.active);
+  }
+
+  onStreamUrlChange(): void {
+    if (this.streamUrl) {
+      this.visualizer.attachStream(this.streamUrl);
+    }
   }
 
   build() {
