@@ -163,8 +163,8 @@ export struct PlayerPage {
   private currentUrl(): string {
     if (this.mode === 'focus') {
       return this.lang === 'cn'
-        ? 'https://lhttp.qtfm.cn/live/20500010/64k.mp3'
-        : 'https://koe.bbg.fm/channels/2/playlist.m3u8';
+        ? 'https://koe.bbg.fm/channels/2/playlist.m3u8'
+        : 'https://lhttp.qtfm.cn/live/20500010/64k.mp3';
     }
     return MODES.sleep.url;
   }
