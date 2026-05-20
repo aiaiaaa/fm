@@ -492,26 +492,15 @@ export struct PlayerPage {
   @Builder
   ModeIcon(m: ModeId) {
     if (m === 'focus') {
-      // 同心圆雷达样式
-      Stack() {
-        Column().width(60).height(60).borderRadius(30)
-          .border({ width: 1.5, color: '#1AFFFFFF' })
-        Column().width(42).height(42).borderRadius(21)
-          .border({ width: 1.5, color: '#33FFFFFF' })
-        Column().width(22).height(22).borderRadius(11)
-          .backgroundColor('#52FFA1')
-          .shadow({ radius: 10, color: '#52FFA1', offsetX: 0, offsetY: 0 })
-      }
-      .width(60).height(60)
-      .alignContent(Alignment.Center)
+      Image($r('app.media.icon_focus'))
+        .width(60)
+        .height(60)
+        .objectFit(ImageFit.Contain)
     } else {
-      // 月亮（Unicode 符号即可）
-      Stack() {
-        Text('\uD83C\uDF19')
-          .fontSize(50)
-      }
-      .width(60).height(60)
-      .alignContent(Alignment.Center)
+      Image($r('app.media.icon_sleep'))
+        .width(60)
+        .height(60)
+        .objectFit(ImageFit.Contain)
     }
   }
 
@@ -529,7 +518,7 @@ export struct PlayerPage {
 
       Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
         .fontSize(12)
-        .fontColor('#99FFFFFF')
+        .fontColor(0x99FFFFFF)
         .margin({ top: 8 })
 
       Blank().layoutWeight(1)
