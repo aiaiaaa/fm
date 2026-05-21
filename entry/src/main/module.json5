@@ -25,7 +25,7 @@
           }
         ],
         "backgroundModes": ["audioPlayback"]
-      }
+      },
     ],
     "requestPermissions": [
       { "name": "ohos.permission.INTERNET" },

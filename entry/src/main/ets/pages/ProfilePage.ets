@@ -335,7 +335,7 @@ export struct ProfilePage {
 
           // ========== 意见反馈 / 设置 / 关于我们 ==========
           Column() {
-            this.MenuRow('\uD83D\uDCAC', '意见反馈', () => {})
+            this.MenuRow('\uD83D\uDCAC', '意见反馈', () => { router.pushUrl({ url: 'pages/FeedbackPage' }); })
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
             this.MenuRow('\u2699', '设置', () => { router.pushUrl({ url: 'pages/SettingsPage' }); })
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)

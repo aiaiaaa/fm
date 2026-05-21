@@ -557,8 +557,8 @@ export struct PlayerPage {
         : [['#161230', 0], ['#111622', 1]]
     })
     .border({
-      width: 0.5,
-      color: '#0DFFFFFF'
+      width: this.mode === m ? 1.5 : 0.5,
+      color: this.mode === m ? '#1D52FFA1' : '#0DFFFFFF'
     })
     .alignItems(HorizontalAlign.Center)
     .focusable(false)
