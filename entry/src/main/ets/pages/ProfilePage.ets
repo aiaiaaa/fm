@@ -211,12 +211,6 @@ export struct ProfilePage {
 
           // 收听统计卡片
           Column() {
-            Text('收听统计')
-              .fontSize(12)
-              .fontColor('#5E6678')
-              .letterSpacing(2)
-              .margin({ bottom: 16 })
-
             Row() {
               this.StatItem(this.totalTime, '累计时长')
               Column().width(1).height(28).backgroundColor('#10FFFFFF')

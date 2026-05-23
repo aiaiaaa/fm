@@ -1,3 +1,4 @@
+import i18n from '@ohos.i18n';
 import { window, router } from '@kit.ArkUI';
 // 持久化 key 注册
 PersistentStorage.persistProp<string>('settings_language', '中文');
@@ -41,6 +42,17 @@ struct SettingsPage {
     }).catch(() => {});
   }
 
+  private changeLanguage(lang: string) {
+    this.language = lang;
+    let langCode = lang === '中文' ? 'zh-CN' : 'en-US';
+    try {
+      i18n.System.setAppPreferredLanguage(langCode);
+      console.info(`语言已切换为: ${langCode}`);
+    } catch (error) {
+      console.error(`语言切换失败: ${error}`);
+    }
+  }
+
   @Builder
   buildLangDialog() {
     Column()
@@ -60,10 +72,10 @@ struct SettingsPage {
           Radio({ value: '中文', group: 'lang' })
             .checked(this.language === '中文')
             .onChange((isChecked: boolean) => {
-              if (isChecked) this.language = '中文';
+              if (isChecked) this.changeLanguage('中文');
             })
             .width(20).height(20)
-          Text('中文')
+          Text($r('app.string.chinese'))
             .fontSize(15)
             .fontColor('#FFFFFF')
             .margin({ left: 12 })
@@ -81,7 +93,7 @@ struct SettingsPage {
           Radio({ value: 'English', group: 'lang' })
             .checked(this.language === 'English')
             .onChange((isChecked: boolean) => {
-              if (isChecked) this.language = 'English';
+              if (isChecked) this.changeLanguage('English');
             })
             .width(20).height(20)
           Text('English')
@@ -99,7 +111,7 @@ struct SettingsPage {
         .backgroundColor(this.language === 'English' ? '#10FFFFFF' : 'transparent')
         .margin({ top: 4 })
 
-        Text('确定')
+        Text($r('app.string.confirm'))
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor('#52FFA1')
@@ -125,18 +137,16 @@ struct SettingsPage {
 
       Column() {
         Row({ space: 10 }) {
-
           Image($r('app.media.back_icon'))
             .width(20)
             .height(20)
             .objectFit(ImageFit.Contain)
-            .margin({left: 38})
+            .margin({ left: 18 }) // 直接控制图标的左边距，确保和下面的标题对齐
             .onClick(() => {
               router.back();
             })
 
-
-          Text('设置')
+          Text($r('app.string.about'))
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
             .fontColor(0xFFFFFF)
@@ -145,8 +155,7 @@ struct SettingsPage {
             .margin({ top: 0, bottom: 0 })
         }
         .width('100%')
-        // 关键修改：确保 left padding 为 18，与下方内容的 padding left: 18 保持一致，从而实现左对齐
-        .padding({ left: 18, right: 18 })
+        .padding({ right: 18 }) // 移除 left:18，交由返回按钮的 margin 控制
         .alignItems(VerticalAlign.Center)
         .justifyContent(FlexAlign.Start)
         .backgroundColor('#0E1420')
@@ -155,7 +164,7 @@ struct SettingsPage {
 
         Column() {
           Row() {
-            Text('语言')
+            Text($r('app.string.language'))
               .fontSize(15)
               .fontColor('#DDFFFFFF')
               .layoutWeight(1)
@@ -180,7 +189,7 @@ struct SettingsPage {
             .alignSelf(ItemAlign.End)
 
           Row() {
-            Text('屏幕常亮')
+            Text($r('app.string.screen_lighting'))
               .fontSize(15)
               .fontColor('#DDFFFFFF')
               .layoutWeight(1)
@@ -200,7 +209,7 @@ struct SettingsPage {
             .alignSelf(ItemAlign.End)
 
           Row() {
-            Text('版本号')
+            Text($r('app.string.version'))
               .fontSize(15)
               .fontColor('#DDFFFFFF')
               .layoutWeight(1)
