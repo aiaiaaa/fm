@@ -1,6 +1,4 @@
-import { window } from '@kit.ArkUI';
-import { promptAction } from '@kit.ArkUI';
-import { router } from '@kit.ArkUI';
+import { window, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { ListeningStats } from '../services/ListeningStats';
 
@@ -51,13 +49,7 @@ export struct ProfilePage {
     this.sleepTime = ListeningStats.formatSeconds(stats.sleep);
   }
 
-  private showAboutDialog(): void {
-    promptAction.showDialog({
-      title: '关于 X.FM',
-      message: 'X.FM - AI 智能电台\n\n版本：v6.10\n平台：HarmonyOS NEXT\nSDK：API 12+\n\n由 AGENT 驱动的实时资讯播报平台。\n专注模式提供深度新闻，睡眠模式提供舒缓白噪音。\n\n© 2024-2026 X.FM Team',
-      buttons: [{ text: '确定', color: '#52FFA1' }]
-    });
-  }
+  
 
   /** 选中某个预设时长 */
   private selectTimer(minutes: number): void {
@@ -339,7 +331,7 @@ export struct ProfilePage {
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
             this.MenuRow('\u2699', '设置', () => { router.pushUrl({ url: 'pages/SettingsPage' }); })
             Column().width('85%').height(0.5).backgroundColor('#0AFFFFFF').alignSelf(ItemAlign.End)
-            this.MenuRow('\u24D8', '关于我们', () => { this.showAboutDialog(); })
+            this.MenuRow('\u24D8', '关于我们', () => { router.pushUrl({ url: 'pages/AboutPage' }); })
           }
           .width('88%')
           .borderRadius(18)
