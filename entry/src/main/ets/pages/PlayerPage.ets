@@ -20,13 +20,13 @@ interface StarDot {
 
 /**
  * 电台首页 —— 严格对标设计稿：
- *   顶部 X.FM LOGO
- *   ├─ "正在直播" 标题行  + LIVE 徽标 + 小波形图标
- *   ├─ 大卡片（主播放区）
- *   │    流星 + 星空 + "X.FM - 中文" + 描述 + 音波 + 上/播放/下按钮
- *   └─ "电台模式" 标题
- *        ├─ 专注电台 卡片
- *        └─ 睡眠电台 卡片
+ * 顶部 X.FM LOGO
+ * ├─ "正在直播" 标题行  + LIVE 徽标 + 小波形图标
+ * ├─ 大卡片（主播放区）
+ * │    流星 + 星空 + "X.FM - 中文" + 描述 + 音波 + 上/播放/下按钮
+ * └─ "电台模式" 标题
+ * ├─ 专注电台 卡片
+ * └─ 睡眠电台 卡片
  */
 @Component
 export struct PlayerPage {
@@ -256,7 +256,7 @@ export struct PlayerPage {
   }
 
   @Builder
-  SectionTitle(title: string) {
+  SectionTitle(title: Resource, showLiveBadge: boolean = false) {
     Row() {
       Text(title)
         .fontSize(20)
@@ -264,8 +264,8 @@ export struct PlayerPage {
         .fontColor(0xFFFFFF)
         .layoutWeight(1)
 
-      // 仅 "正在直播" 显示 LIVE + mini wave
-      if (title === '正在直播') {
+      // 仅传入 showLiveBadge 为 true 时显示 LIVE + mini wave
+      if (showLiveBadge) {
         Row({ space: 10 }) {
           Row({ space: 6 }) {
             Column().width(7).height(7).borderRadius(4).backgroundColor(0x52FFA1)
@@ -396,7 +396,7 @@ export struct PlayerPage {
             .fontSize(12).fontColor(cfg.accent).fontWeight(FontWeight.Medium)
           Text('·')
             .fontSize(12).fontColor('#88FFFFFF')
-          Text(this.mode === 'focus' ? '实时播报' : '助眠播放')
+          Text(this.mode === 'focus' ? $r('app.string.real_time_mode') : $r('app.string.sleep_mode'))
             .fontSize(12).fontColor('#CCFFFFFF')
         }
         .width('100%')
@@ -413,7 +413,7 @@ export struct PlayerPage {
             .fontColor('#FFFFFF')
             .letterSpacing(1.5)
 
-          Text(this.mode === 'focus' ? 'AGENT正在为您播报' : cfg.subtitle)
+          Text(this.mode === 'focus' ? 'Agent正在实时播放' : cfg.subtitle)
             .fontSize(13)
             .fontColor('#AAFFFFFF')
             .margin({ top: 10 })
@@ -510,13 +510,13 @@ export struct PlayerPage {
       Blank().height(18)
       this.ModeIcon(m)
 
-      Text(m === 'focus' ? '专注电台' : '睡眠电台')
+      Text(m === 'focus' ? $r('app.string.focus_one') : $r('app.string.sleep_one'))
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
         .fontColor(m === 'focus' ? '#52FFA1' : '#B69CFF')
         .margin({ top: 18 })
 
-      Text(m === 'focus' ? '深度资讯，专注当下' : '舒缓声音，伴你入眠')
+      Text(m === 'focus' ? $r('app.string.focus_describe') : $r('app.string.sleep_describe'))
         .fontSize(12)
         .fontColor(0x99FFFFFF)
         .margin({ top: 8 })
@@ -537,7 +537,7 @@ export struct PlayerPage {
         .alignItems(VerticalAlign.Center)
         .height(16)
 
-        Text(m === 'focus' ? (this.mode === 'focus' && this.isPlaying ? '正在直播' : '正在直播') : '助眠播放')
+        Text(m === 'focus' ? $r('app.string.living') : $r('app.string.sleep_mode'))
           .fontSize(13)
           .fontColor('#DDFFFFFF')
       }
@@ -588,8 +588,8 @@ export struct PlayerPage {
       Scroll() {
         Column() {
           this.LogoHeader()
-
-          this.SectionTitle('正在直播')
+          // 专注电台（正在直播）区域，传入 true 显示徽标
+          this.SectionTitle($r('app.string.living'), true)
           Column() {
             this.LiveCard(this.currentCfg())
           }
@@ -597,7 +597,11 @@ export struct PlayerPage {
           .padding({ left: 24, right: 24 })
           .margin({ bottom: 28 })
 
-          this.SectionTitle('电台模式')
+          if (this.mode === 'focus') {
+            this.SectionTitle($r('app.string.focus_one'))
+          } else {
+            this.SectionTitle($r('app.string.sleep_one'))
+          }
           this.ModeRow()
 
           // 留白高度需超过底部悬浮胶囊TabBar（56+20=76vp）
