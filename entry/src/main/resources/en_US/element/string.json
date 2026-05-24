@@ -1,0 +1,58 @@
+{
+  "string": [
+    {
+      "name": "living",
+      "value": "living"
+    },
+    {
+      "name": "sleep_play",
+      "value": "sleeping"
+    },
+    {
+      "name": "real_time_mode",
+      "value": "real-time mode"
+    },
+    {
+      "name": "sleep_mode",
+      "value": "sleep-assist mode"
+    },
+    {
+      "name": "sleep_describe",
+      "value": "Go Deep,Stay Present"
+    },
+    {
+      "name": "focus_describe",
+      "value": "Soothing Sounds,Sweet Dreams"
+    },
+    { "name": "focus_one", "value": "Focus Radio" },
+    { "name": "sleep_one", "value": "Sleep Radio" },
+    { "name": "focus_words", "value": "News · Analysis · Culture" },
+    { "name": "sleep_words", "value": "White Noise · Relaxation · Peace" },
+    { "name": "my", "value": "My"},
+    { "name": "profile", "value": "X.FM Audience"},
+    { "name": "flag", "value": "Stay Focused,Sleep Well."},
+    { "name": "feedback", "value": "Feedback" },
+    { "name": "setting", "value": "Setting" },
+    { "name": "about", "value": "About" },
+    { "name": "question_cate", "value": "Question Category" },
+    { "name": "feedback_content", "value": "Contents" },
+    { "name": "playback", "value": "Playback" },
+    { "name": "incompatibility", "value": "Incompatibility" },
+    { "name": "other_bug", "value": "Other Bug" },
+    { "name": "feedback_describe", "value": "Please describe the issue you're experiencing in detail." },
+    { "name": "submit_button", "value": "Submit" },
+    { "name": "contact_us", "value": "Contact" },
+    { "name": "mail", "value": "Mail" },
+    { "name": "tiktok", "value": "Douyin" },
+    { "name": "official_web", "value": "Website" },
+    { "name": "app_developer", "value": "X.FM Developer" },
+    { "name": "terms", "value": "Terms of Service" },
+    { "name": "privacy", "value": "Privacy Policy" },
+    { "name": "language", "value": "Language" },
+    { "name": "chinese", "value": "Chinese" },
+    { "name": "english", "value": "English" },
+    { "name": "confirm", "value": "Confirm" },
+    { "name": "screen_lighting", "value": "Lighting" },
+    { "name": "version", "value": "Version" }
+  ]
+}

@@ -1,0 +1,18 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="focus-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <g filter="url(#focus-glow)">
+    <circle cx="50" cy="50" r="10" fill="#52FFA1" />
+    
+    <path d="M 34.45 65.55 A 22 22 0 1 1 65.55 65.55" 
+          fill="none" stroke="#52FFA1" stroke-width="4.5" stroke-linecap="round" />
+          
+    <path d="M 24.55 75.45 A 36 36 0 1 1 75.45 75.45" 
+          fill="none" stroke="#52FFA1" stroke-width="3" stroke-linecap="round" />
+  </g>
+</svg>

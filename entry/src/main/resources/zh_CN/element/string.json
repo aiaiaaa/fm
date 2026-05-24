@@ -1,16 +1,22 @@
 {
   "string": [
-    { "name": "app_name", "value": "X.FM" },
-    { "name": "EntryAbility_desc", "value": "X.FM radio" },
-    { "name": "EntryAbility_label", "value": "X.FM" },
-    { "name": "living", "value": "正在直播" },
-    { "name": "sleep_play", "value": "助眠播放312" },
-    { "name": "real_time_mode", "value": "实时播放" },
-    { "name": "sleep_mode", "value": "助眠播放123" },
-    { "name": "focus_one", "value": "专注电台" },
+    {
+      "name": "living",
+      "value": "正在直播"
+    },
+    {
+      "name": "real_time_mode",
+      "value": "实时播放"
+    },
+    {
+      "name": "sleep_mode",
+      "value": "助眠播放3333"
+    },
+    { "name": "sleep_one", "value": "助眠电台" },
+    { "name": "focus_one", "value": "专注电台"},
     { "name": "focus_words", "value": "新闻 · 深度 · 文化" },
     { "name": "sleep_words", "value": "白噪音 · 助眠 · 安静" },
-    { "name": "sleep_one", "value": "助眠电台" },
+    { "name": "sleep_play", "value": "助眠播放1111" },
     { "name": "sleep_describe", "value": "舒缓声音，伴你入眠" },
     { "name": "focus_describe", "value": "深度资讯，专注当下" },
 

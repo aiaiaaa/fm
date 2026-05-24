@@ -84,6 +84,20 @@ struct Instance {
     std::condition_variable ring_cv;
     std::deque<std::vector<float>> ring; // FIFO of band frames waiting to emit
     std::atomic<bool> pacer_run{false};
+
+    // Underrun graceful-decay state. When the ring goes empty (HLS segment
+    // boundary, playlist refresh stall, network hiccup), the original code
+    // skipped pacer ticks entirely. ArkTS-side animateTo(80ms) then expired
+    // and the bars froze on their last value for the full duration of the
+    // stall — typically 1.5~2s, which is exactly the "卡 2s" symptom.
+    //
+    // Instead, when the ring underruns we keep emitting at the steady 23ms
+    // beat but decay the last real frame exponentially toward zero, so the
+    // UI shows a smooth fade-out rather than a freeze. As soon as a fresh
+    // bands frame arrives, we snap back to it.
+    std::vector<float> last_frame;          // last band frame (real or decayed)
+    bool last_frame_valid = false;
+    int underrun_ticks = 0;                 // consecutive empty-ring ticks
 };
 
 // Global registry of instances. Handle 0 is reserved as "invalid".
@@ -160,24 +174,64 @@ void CallJsBands(napi_env env, napi_value js_callback, void* /*context*/, void* 
  * and we don't want to depend on the JS event loop for pacing (it stalls
  * during heavy ArkTS work). std::thread + sleep_for is dead simple and
  * gives us a steady drumbeat.
+ *
+ * Underrun handling: when the ring is empty we used to skip the tick, but
+ * that left the UI's last animateTo(80ms) to expire and freeze the bars on
+ * their last position — exactly matching user reports of "spectrum stalls
+ * for 2s". Now we instead keep the steady 23ms beat and emit an
+ * exponentially-decayed copy of the last real frame, so a missing-data
+ * window looks like a smooth fade-out instead of a freeze. We stop
+ * emitting only after the fade reaches near-zero (kDecayStopThreshold).
  */
+constexpr float kUnderrunDecay = 0.97f;        // per tick; ~750ms half-life (gentler fade)
+constexpr float kDecayStopThreshold = 0.003f;  // below this we stop emitting
+constexpr int kMaxUnderrunDecayTicks = 120;    // ~2.8s safety cap (longer tail)
 void PacerLoop(std::shared_ptr<Instance> inst) {
     while (inst->pacer_run.load(std::memory_order_acquire)) {
         auto next_tick = std::chrono::steady_clock::now() +
                          std::chrono::milliseconds(kPaceIntervalMs);
 
         std::vector<float> frame;
+        bool have_fresh = false;
         {
             std::unique_lock<std::mutex> lk(inst->ring_mtx);
             if (!inst->ring.empty()) {
                 frame = std::move(inst->ring.front());
                 inst->ring.pop_front();
-            } else {
-                // Underrun: skip the tick — do NOT re-emit a stale frame.
-                // Re-emission produced a stutter pattern (frame, frame,
-                // frame, NEW, frame, frame, NEW, ...) that looked like
-                // jitter; skipping ticks lets the UI hold steady on
-                // whatever it last had until fresh data arrives.
+                have_fresh = true;
+            }
+        }
+
+        if (have_fresh) {
+            // Fresh data: snap back, reset underrun state, remember as last.
+            inst->underrun_ticks = 0;
+            inst->last_frame = frame;
+            inst->last_frame_valid = true;
+        } else {
+            // Underrun: synthesize a decayed frame from last_frame.
+            if (!inst->last_frame_valid || inst->last_frame.empty() ||
+                inst->underrun_ticks >= kMaxUnderrunDecayTicks) {
+                // Either we never had data yet, or we've been decaying for
+                // too long — go quiet and skip the tick.
+                std::this_thread::sleep_until(next_tick);
+                continue;
+            }
+            inst->underrun_ticks++;
+            // Decay every band toward 0. Find the peak so we can short-circuit
+            // once everything is essentially silent.
+            float peak = 0.0f;
+            frame.resize(inst->last_frame.size());
+            for (size_t i = 0; i < inst->last_frame.size(); ++i) {
+                float v = inst->last_frame[i] * kUnderrunDecay;
+                if (v < kDecayStopThreshold) v = 0.0f;
+                frame[i] = v;
+                if (v > peak) peak = v;
+            }
+            inst->last_frame = frame;
+            if (peak < kDecayStopThreshold) {
+                // Faded to silence: invalidate so we stop emitting until
+                // real data arrives again.
+                inst->last_frame_valid = false;
                 std::this_thread::sleep_until(next_tick);
                 continue;
             }
@@ -186,8 +240,9 @@ void PacerLoop(std::shared_ptr<Instance> inst) {
         if (inst->tsfn != nullptr) {
             uint32_t emitted = ++g_bands_emitted;
             if (emitted == 1 || emitted == 30 || (emitted % 300) == 0) {
-                LOGW("paced bands emit: total=%{public}u (b0=%{public}.2f b8=%{public}.2f b15=%{public}.2f)",
-                     emitted, frame.empty() ? 0.0f : frame[0],
+                LOGW("paced bands emit: total=%{public}u underrun_ticks=%{public}d (b0=%{public}.2f b8=%{public}.2f b15=%{public}.2f)",
+                     emitted, inst->underrun_ticks,
+                     frame.empty() ? 0.0f : frame[0],
                      frame.size() > 8 ? frame[8] : 0.0f,
                      frame.size() > 15 ? frame[15] : 0.0f);
             }
@@ -367,6 +422,11 @@ napi_value Reset(napi_env env, napi_callback_info info) {
         std::lock_guard<std::mutex> lk(inst->ring_mtx);
         inst->ring.clear();
     }
+    // Clear the underrun-decay memory too so a stream switch doesn't pick
+    // up where the previous stream's last frame left off.
+    inst->last_frame.clear();
+    inst->last_frame_valid = false;
+    inst->underrun_ticks = 0;
     return nullptr;
 }
 
